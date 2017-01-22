@@ -6,14 +6,35 @@ open System.Xml
 open MightyTransformers.Common
 
 [<RequireQualifiedAccess>]
+type XName =
+  | Global    of string*string
+  | Local     of string
+  | Qualified of string*string*string
+
+  override x.ToString () = 
+    match x with
+    | Global    (localName, namespaceUri)   ->
+      if namespaceUri.Length = 0 then 
+        localName
+      else
+        sprintf "{%s#%s}" namespaceUri localName
+    | Local     (localName)                 -> localName
+    | Qualified (localName, prefix, qname)  -> qname
+
+module XNames = 
+  let inline xnglobal     localName namespaceUri  = XName.Global    (localName, namespaceUri)
+  let inline xnlocal      localName               = XName.Local     (localName)
+  let inline xnqualified  localName prefix        = XName.Qualified (localName, prefix, if prefix.Length = 0 then localName else prefix + ":" + localName)
+
+[<RequireQualifiedAccess>]
 type XContextElement =
-  | Element of  string*int
+  | Element of  XName*int
   | Named   of  string
 type XContext = XContextElement list
 
 [<RequireQualifiedAccess>]
 type XError =
-  | AttributeNotFound   of string
+  | AttributeNotFound   of XName
   | CheckFailed         of string
   | DescendantNotFound  of string
   | ElementNotFound     of string
@@ -39,20 +60,26 @@ type XResult<'T>(v : 'T, et : XErrorTree) =
   end
 type XTransform<'T> = XmlElement -> XContext -> XResult<'T>
 
-module XQuery =
+module XElementQueries =
 
   module Details =
     let inline toLower (s : string)= 
       s.ToLowerInvariant ()
 
-    let inline tryFindAttribute (e : XmlElement) name = 
-      e.Attributes.GetNamedItem name
+    let inline tryFindAttribute name (e : XmlElement) =
+      match name with
+      | XName.Global    (localName, namespaceUri) -> e.Attributes.GetNamedItem (localName, namespaceUri)
+      | XName.Local     (localName)               -> e.Attributes.GetNamedItem (localName, "")
+      | XName.Qualified (localName, prefix, qname)-> e.Attributes.GetNamedItem (qname)
+      
 
-    let inline elementLocalName (e : XmlElement) =
-      e.LocalName
+    let inline hasElementName name (e : XmlElement) =
+      match name with
+      | XName.Global    (localName, namespaceUri) -> e.LocalName = localName && e.NamespaceURI = namespaceUri
+      | XName.Local     (localName)               -> e.LocalName = localName
+      | XName.Qualified (localName, prefix, qname)-> e.Name      = qname
 
-    let inline elementName (e : XmlElement) =
-      e.Name
+    let inline toString (x : #obj) = x.ToString ()
 
   open Details
 
@@ -77,23 +104,20 @@ module XQuery =
 
   let inline xqhasAttribute name =
     let f e = 
-      tryFindAttribute e name <> null
-    XElementQuery.Filter (sprintf "Expected element with attribute named '%s'" name, f)
+      tryFindAttribute name e <> null
+    XElementQuery.Filter (sprintf "Expected element with attribute named '%s'" (toString name), f)
 
   let inline xqhasAttributeValue name value =
     let f e = 
-      match tryFindAttribute e name with
+      match tryFindAttribute name e with
       | null  -> false
       | attr  -> attr.Value = value
-    XElementQuery.Filter (sprintf "Expected element with attribute named '%s' and value '%s'" name value, f)
-
-  let inline xqhasLocalName name =
-    let f e = elementLocalName e = name
-    XElementQuery.Filter (sprintf "Expected element locally named '%s'" name, f)
+    XElementQuery.Filter (sprintf "Expected element with attribute named '%s' and value '%s'" (toString name) value, f)
 
   let inline xqhasName name =
-    let f e = elementName e = name
-    XElementQuery.Filter (sprintf "Expected element named '%s'" name, f)
+    let f e =
+      hasElementName name e 
+    XElementQuery.Filter (sprintf "Expected element named '%s'" (toString name), f)
 
   let xqtrue =
     XElementQuery.Filter ("Always true", fun _ -> true)
@@ -107,14 +131,16 @@ module XQuery =
 module Details =
 
   module Loops =
+    open XElementQueries.Details
+
     let rec pathToString (sb : StringBuilder) p =
       match p with
       | []    -> sb.Append "body" |> ignore
       | h::t  ->
         pathToString sb t
         match h with
-        | XContextElement.Element (e, i)  -> sb.Append (sprintf "/%s@%d" e i) |> ignore
-        | XContextElement.Named   n       -> sb.Append (sprintf "(%s)" n)     |> ignore
+        | XContextElement.Element (e, i)  -> sb.Append (sprintf "/%s@%d" (toString e) i)  |> ignore
+        | XContextElement.Named   n       -> sb.Append (sprintf "(%s)" n)                 |> ignore
 
   let defaultSize     = 16
   let inline adapt f  = OptimizedClosures.FSharpFunc<_, _, _>.Adapt f
@@ -130,6 +156,9 @@ module Details =
     | _                 , _                 -> XErrorTree.Fork (l, r)
 
   let inline invoke (t : OptimizedClosures.FSharpFunc<XmlElement,XContext,XResult<_>>) e p = t.Invoke (e, p)
+
+  let inline elementName (e : XmlElement) =
+    XNames.xnqualified e.LocalName e.Prefix
 
   let pathToString p =
     let sb = System.Text.StringBuilder defaultSize
@@ -190,7 +219,6 @@ module XTransform =
       let tr  = invoke t e p
       let ur  = invoke u e p
       result (tr.Value ur.Value) (join tr.ErrorTree ur.ErrorTree)
-
 
   // Functor
 
@@ -303,11 +331,11 @@ module XTransform =
 
   // Extractors
 
-  open XQuery.Details
+  open XElementQueries.Details
 
   let inline xattribute name v : XTransform<string> =
     fun e p ->
-      match tryFindAttribute e name with
+      match tryFindAttribute name e with
       | null  -> result v (name |> XError.AttributeNotFound |> leaf p)
       | a     -> good a.Value
 
@@ -332,7 +360,7 @@ module XTransform =
   let xtrim t =
     xmap (fun (s : string) -> s.Trim ()) t
 
-  open XQuery
+  open XElementQueries
 
   // Checks 
 

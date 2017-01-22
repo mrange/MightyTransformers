@@ -40,8 +40,8 @@
 module XmlTransformerTest =
   open Common
   open MightyTransformers.Xml.XmlTransformer
-  open MightyTransformers.Xml.XmlTransformer.XQuery
-  open MightyTransformers.Xml.XmlTransformer.XQuery.Infixes
+  open MightyTransformers.Xml.XmlTransformer.XElementQueries
+  open MightyTransformers.Xml.XmlTransformer.XElementQueries.Infixes
   open MightyTransformers.Xml.XmlTransformer.XTransform
   open MightyTransformers.Xml.XmlTransformer.XTransform.Infixes
   open System.Xml
@@ -83,17 +83,26 @@ module XmlTransformerTest =
   </author>
 </authors>
 """
+//    <notes title="Some unfinished notes" />
 
-    let xbook       = xcheck (xqhasName "book")       >>. (xattributez "title" |>> Book)
-    let xmanuscript = xcheck (xqhasName "manuscript") >>. (xattributez "title" |>> Manuscript)
+    let xnauthors     = XNames.xnlocal "authors"
+    let xnbirth       = XNames.xnlocal "birth"
+    let xnbook        = XNames.xnlocal "book"
+    let xnmanuscript  = XNames.xnlocal "manuscript"
+    let xnname        = XNames.xnlocal "name"
+    let xnsurname     = XNames.xnlocal "surname"
+    let xntitle       = XNames.xnlocal "title"
+
+    let xbook       = xcheck (xqhasName xnbook)       >>. (xattributez xntitle |>> Book)
+    let xmanuscript = xcheck (xqhasName xnmanuscript) >>. (xattributez xntitle |>> Manuscript)
     let xwork       = xbook <|> xmanuscript
     let xauthor     =
       xpure Author.New
-      <*> (xattributez "name")
-      <*> (xattributez "surname")
-      <*> (xattributez "birth" |> xtoInt32 |> xtoOption)
+      <*> (xattributez xnname)
+      <*> (xattributez xnsurname)
+      <*> (xattributez xnbirth |> xtoInt32 |> xtoOption)
       <*> (xelements xqtrue xwork)
-    let xauthors    = xcheck (xqhasName "authors") >>. xelements xqtrue xauthor
+    let xauthors    = xcheck (xqhasName xnauthors) >>. xelements xqtrue xauthor
 
     let xdoc = XmlDocument ()
     xdoc.LoadXml xml
