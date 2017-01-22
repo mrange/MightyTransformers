@@ -1,4 +1,4 @@
-﻿module Common =
+module Common =
   open FSharp.Core.Printf
 
   open System
@@ -85,18 +85,20 @@ module XmlTransformerTest =
 """
 //    <notes title="Some unfinished notes" />
 
-    let xnauthors     = XNames.xnlocal "authors"
-    let xnbirth       = XNames.xnlocal "birth"
-    let xnbook        = XNames.xnlocal "book"
-    let xnmanuscript  = XNames.xnlocal "manuscript"
-    let xnname        = XNames.xnlocal "name"
-    let xnsurname     = XNames.xnlocal "surname"
-    let xntitle       = XNames.xnlocal "title"
+    let xn n          = XNames.xnlocal n
 
-    let xbook       = xcheck (xqhasName xnbook)       >>. (xattributez xntitle |>> Book)
-    let xmanuscript = xcheck (xqhasName xnmanuscript) >>. (xattributez xntitle |>> Manuscript)
-    let xwork       = xbook <|> xmanuscript
-    let xauthor     =
+    let xnauthors     = xn "authors"
+    let xnbirth       = xn "birth"
+    let xnbook        = xn "book"
+    let xnmanuscript  = xn "manuscript"
+    let xnname        = xn "name"
+    let xnsurname     = xn "surname"
+    let xntitle       = xn "title"
+
+    let xbook         = xcheck (xqhasName xnbook)       >>. (xattributez xntitle |>> Book)
+    let xmanuscript   = xcheck (xqhasName xnmanuscript) >>. (xattributez xntitle |>> Manuscript)
+    let xwork         = xbook <|> xmanuscript
+    let xauthor       =
       xpure Author.New
       <*> (xattributez xnname)
       <*> (xattributez xnsurname)

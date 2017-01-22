@@ -1,4 +1,4 @@
-﻿namespace MightyTransformers.Common
+namespace MightyTransformers.Common
 
 // Provides F# idiomatic API around System.Linq.Enumerable
 //  In general System.Linq.Enumerable performs better than Seq

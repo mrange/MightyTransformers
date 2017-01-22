@@ -1,4 +1,4 @@
-﻿namespace MightyTransformers.Common
+namespace MightyTransformers.Common
 
 // In F#4.1 there's a Result<'T>
 type Result<'TGood, 'TBad> =

@@ -11,17 +11,17 @@ type XName =
   | Local     of string
   | Qualified of string*string*string
 
-  override x.ToString () = 
+  override x.ToString () =
     match x with
     | Global    (localName, namespaceUri)   ->
-      if namespaceUri.Length = 0 then 
+      if namespaceUri.Length = 0 then
         localName
       else
         sprintf "{%s#%s}" namespaceUri localName
     | Local     (localName)                 -> localName
     | Qualified (localName, prefix, qname)  -> qname
 
-module XNames = 
+module XNames =
   let inline xnglobal     localName namespaceUri  = XName.Global    (localName, namespaceUri)
   let inline xnlocal      localName               = XName.Local     (localName)
   let inline xnqualified  localName prefix        = XName.Qualified (localName, prefix, if prefix.Length = 0 then localName else prefix + ":" + localName)
@@ -39,6 +39,7 @@ type XError =
   | DescendantNotFound  of string
   | ElementNotFound     of string
   | Failure             of string
+  | NoParentElement
   | NoRootElement
   | Warning             of string
 
@@ -58,20 +59,32 @@ type XResult<'T>(v : 'T, et : XErrorTree) =
     member x.Value      = v
     member x.ErrorTree  = et
   end
+
 type XTransform<'T> = XmlElement -> XContext -> XResult<'T>
 
 module XElementQueries =
 
   module Details =
-    let inline toLower (s : string)= 
+    module Loops =
+      let rec tryFindAttribute_Localname localName (xac : XmlAttributeCollection) c i =
+        if i < c then
+          let xa = xac.[i : int]
+          if xa.LocalName = localName then
+            xa
+          else
+            tryFindAttribute_Localname localName xac c (i + 1)
+        else
+          null
+
+    let inline toLower (s : string)=
       s.ToLowerInvariant ()
 
     let inline tryFindAttribute name (e : XmlElement) =
       match name with
-      | XName.Global    (localName, namespaceUri) -> e.Attributes.GetNamedItem (localName, namespaceUri)
-      | XName.Local     (localName)               -> e.Attributes.GetNamedItem (localName, "")
-      | XName.Qualified (localName, prefix, qname)-> e.Attributes.GetNamedItem (qname)
-      
+      | XName.Global    (localName, namespaceUri) -> e.Attributes.GetNamedItem (localName, namespaceUri) :?> XmlAttribute
+      | XName.Local     (localName)               -> Loops.tryFindAttribute_Localname localName e.Attributes e.Attributes.Count 0
+      | XName.Qualified (localName, prefix, qname)-> e.Attributes.GetNamedItem (qname) :?> XmlAttribute
+
 
     let inline hasElementName name (e : XmlElement) =
       match name with
@@ -103,12 +116,12 @@ module XElementQueries =
     XElementQuery.And (l, r)
 
   let inline xqhasAttribute name =
-    let f e = 
+    let f e =
       tryFindAttribute name e <> null
     XElementQuery.Filter (sprintf "Expected element with attribute named '%s'" (toString name), f)
 
   let inline xqhasAttributeValue name value =
-    let f e = 
+    let f e =
       match tryFindAttribute name e with
       | null  -> false
       | attr  -> attr.Value = value
@@ -116,7 +129,7 @@ module XElementQueries =
 
   let inline xqhasName name =
     let f e =
-      hasElementName name e 
+      hasElementName name e
     XElementQuery.Filter (sprintf "Expected element named '%s'" (toString name), f)
 
   let xqtrue =
@@ -362,7 +375,7 @@ module XTransform =
 
   open XElementQueries
 
-  // Checks 
+  // Checks
 
   let xcheck (xeq : XElementQuery) : XTransform<unit> =
     fun e p ->
@@ -385,7 +398,7 @@ module XTransform =
           else
             xdescendant xeq r t ip head.ChildNodes head.ChildNodes.Count 0 || xdescendant xeq r t p ns c (i + 1)
         | _ ->
-          xdescendant xeq r t p ns c (i + 1) 
+          xdescendant xeq r t p ns c (i + 1)
       else
         false
 
@@ -401,10 +414,10 @@ module XTransform =
             | _                 -> ()
             xdescendants xeq r t (join et tr.ErrorTree) p ns c (i + 1)
           else
-            let et = xdescendants xeq r t et ip head.ChildNodes head.ChildNodes.Count (i + 1) 
-            xdescendants xeq r t et p ns c (i + 1) 
+            let et = xdescendants xeq r t et ip head.ChildNodes head.ChildNodes.Count (i + 1)
+            xdescendants xeq r t et p ns c (i + 1)
         | _ ->
-          xdescendants xeq r t et p ns c (i + 1) 
+          xdescendants xeq r t et p ns c (i + 1)
       else
         et
 
@@ -419,7 +432,7 @@ module XTransform =
           else
             xelement xeq r t p ns c (i + 1)
         | _ ->
-          xelement xeq r t p ns c (i + 1) 
+          xelement xeq r t p ns c (i + 1)
       else
         false
 
@@ -435,9 +448,9 @@ module XTransform =
             | _                 -> ()
             xelements xeq r t (join et tr.ErrorTree) p ns c (i + 1)
           else
-            xelements xeq r t et p ns c (i + 1) 
+            xelements xeq r t et p ns c (i + 1)
         | _ ->
-          xelements xeq r t et p ns c (i + 1) 
+          xelements xeq r t et p ns c (i + 1)
       else
         et
 
@@ -478,6 +491,15 @@ module XTransform =
       let r = ResizeArray defaultSize
       let et = Loops.xelements xeq r t XErrorTree.Empty p e.ChildNodes e.ChildNodes.Count 0
       result (r.ToArray ()) et
+
+  let inline xparent v (t : XTransform<'T>) : XTransform<'T> =
+    let t = adapt t
+    fun e p ->
+      match p, e.ParentNode with
+      | _::p, (:? XmlElement as e) ->
+        invoke t e p
+      | _ ->
+        result v (XError.NoParentElement |> leaf p)
 
   type XBuilder() =
     member inline x.Bind        (t, uf) = xbind t uf
