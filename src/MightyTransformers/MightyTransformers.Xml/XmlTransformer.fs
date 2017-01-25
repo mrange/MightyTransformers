@@ -148,7 +148,7 @@ module Details =
 
     let rec pathToString (sb : StringBuilder) p =
       match p with
-      | []    -> sb.Append "body" |> ignore
+      | []    -> sb.Append "." |> ignore
       | h::t  ->
         pathToString sb t
         match h with
@@ -330,17 +330,16 @@ module XTransform =
       | _                 -> printfn "FAILURE %s: %A(%A)" name tr.Value tr.ErrorTree
       tr
 
-  let inline xrun (t : XTransform<'T>) v (doc : XmlDocument) =
-    let root = doc.DocumentElement
+  let inline xrun (t : XTransform<'T>) v (root : XmlElement) =
     if root <> null then
       let t = adapt t
-      let tr = invoke t doc.DocumentElement []
+      let tr = invoke t root []
       tr.Value, collapse tr.ErrorTree
     else
       v, collapse (leaf [] XError.NoRootElement)
 
-  let inline xrunz t doc =
-    xrun t (zero ()) doc
+  let inline xrunz t root =
+    xrun t (zero ()) root
 
   // Extractors
 

@@ -44,6 +44,9 @@
     <Reference Include="System.Numerics" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\Shared_AssemblyInfo.fs">
+      <Link>Shared_AssemblyInfo.fs</Link>
+    </Compile>
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="Result.fs" />
     <Compile Include="FsLinq.fs" />

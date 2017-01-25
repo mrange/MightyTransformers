@@ -108,7 +108,7 @@ module XmlTransformerTest =
 
     let xdoc = XmlDocument ()
     xdoc.LoadXml xml
-    let xres = xrun xauthors [||] xdoc
+    let xres = xrun xauthors [||] xdoc.DocumentElement
 
     infof "%A" xres
 
