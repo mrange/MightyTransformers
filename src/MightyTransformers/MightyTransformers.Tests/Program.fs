@@ -37,6 +37,98 @@ module Common =
       | e ->
         error "Failed to dispose object"
 
+module JsonTransformerTest =
+  open Common
+  open MightyTransformers.Json.JsonTransformer
+  open MightyTransformers.Json.JsonTransformer.JTransform
+  open MightyTransformers.Json.JsonTransformer.JTransform.Infixes
+
+  open MiniJson.JsonModule
+
+  type Work =
+    | Book        of string
+    | Manuscript  of string
+
+  type Author =
+    {
+      FirstName   : string
+      LastName    : string
+      YearOfBirth : int option
+      Works       : Work []
+    }
+
+    static member New firstName lastName yearOfBirth works : Author =
+      {
+        FirstName   = firstName
+        LastName    = lastName
+        YearOfBirth = yearOfBirth
+        Works       = works
+      }
+
+    static member Empty = Author.New "" "" None [||]
+
+  let testAuthorsTransform () =
+    let json = """
+[
+    {
+        "name"    : "Ludwig"
+      , "surname" : "Wittgenstein"
+      , "works"   : [
+          {
+              "kind"    : "book"
+            , "title"   : "Tractatus Logico-Philosophicus"
+          }
+        , {
+              "kind"    : "book"
+            , "title"   : "Philosophical Investigations"
+          }
+        , {
+              "kind"    : "manuscript"
+            , "title"   : "Notes on Logic"
+          }
+      ]
+    }
+  , {
+        "name"    : "Rene"
+      , "surname" : "Descartes"
+      , "birth"   : 1596
+      , "works"   : [
+          {
+              "kind"    : "book"
+            , "title"   : "Discourse on Method and the Meditations"
+          }
+        , {
+              "kind"    : "book"
+            , "title"   : "Meditations and Other Metaphysical Writings"
+          }
+        , {
+              "kind"    : "notes"
+            , "title"   : "Some unfinished notes"
+          }
+      ]
+    }
+]
+"""
+
+    let jkind kind = jmember "kind" () (jasString >>= fun v -> if v = kind then jreturn () else jfailuref () "Expected kind '%s' but found '%s'" kind v)
+
+    let jtitle      = jmember "title" "" jasString
+    let jbook       = jkind "book"        >>. jtitle |>> Book
+    let jmanuscript = jkind "manuscript"  >>. jtitle |>> Manuscript
+    let jwork       = jbook <|> jmanuscript
+
+    match parse true json with
+    | ParseResult.Success json       -> 
+
+      infof "Successfully parsed json: %A" json
+    | ParseResult.Failure (msg, pos) -> 
+      errorf "Failed to parse json: %s" msg
+
+    ()
+
+  let run () =
+    testAuthorsTransform ()
+
 module XmlTransformerTest =
   open Common
   open MightyTransformers.Xml.XmlTransformer
@@ -123,7 +215,8 @@ let main argv =
   try
     Environment.CurrentDirectory <- AppDomain.CurrentDomain.BaseDirectory
 
-    XmlTransformerTest.run ()
+    JsonTransformerTest.run ()
+    //XmlTransformerTest.run ()
 
     if Common.errorTraceCount > 0 then
       errorf "Detected %d error(s)" Common.errorTraceCount

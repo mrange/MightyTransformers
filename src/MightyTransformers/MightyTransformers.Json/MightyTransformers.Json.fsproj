@@ -48,6 +48,19 @@
       <Link>Shared_AssemblyInfo.fs</Link>
     </Compile>
     <Compile Include="AssemblyInfo.fs" />
+    <Compile Include="JsonTransformer.fs" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\MiniJson\src\MiniJson\MiniJson.fsproj">
+      <Name>MiniJson</Name>
+      <Project>{68c7233e-b616-4233-a3b8-6881f11dfb2f}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\MightyTransformers.Common\MightyTransformers.Common.fsproj">
+      <Name>MightyTransformers.Common</Name>
+      <Project>{3f26329f-4736-4632-8250-fe124d5092b6}</Project>
+      <Private>True</Private>
+    </ProjectReference>
   </ItemGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>

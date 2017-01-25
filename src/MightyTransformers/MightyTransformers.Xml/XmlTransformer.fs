@@ -281,6 +281,20 @@ module XTransform =
       let rr = invoke r e p
       result (lr.Value, rr.Value) (join lr.ErrorTree rr.ErrorTree)
 
+  let inline xfallBackOn v (t : XTransform<'T>) : XTransform<'T> =
+    let t = adapt t
+    fun e p ->
+      let tr = invoke t e p
+      match tr.ErrorTree with
+      | XErrorTree.Empty  -> good tr.Value
+      | _                 -> good v
+
+  let inline xsuppressErrors (t : XTransform<'T>) : XTransform<'T> =
+    let t = adapt t
+    fun e p ->
+      let tr = invoke t e p
+      good tr.Value
+
   let inline xtoOption (t : XTransform<'T>) : XTransform<'T option> =
     let t = adapt t
     fun e p ->

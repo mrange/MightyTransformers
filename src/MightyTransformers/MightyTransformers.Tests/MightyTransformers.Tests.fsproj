@@ -101,6 +101,16 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\..\MiniJson\src\MiniJson\MiniJson.fsproj">
+      <Name>MiniJson</Name>
+      <Project>{68c7233e-b616-4233-a3b8-6881f11dfb2f}</Project>
+      <Private>True</Private>
+    </ProjectReference>
+    <ProjectReference Include="..\MightyTransformers.Json\MightyTransformers.Json.fsproj">
+      <Name>MightyTransformers.Json</Name>
+      <Project>{25f7e4fe-92ff-4577-9a3f-bc3f1f08a53e}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\MightyTransformers.Xml\MightyTransformers.Xml.fsproj">
       <Name>MightyTransformers.Xml</Name>
       <Project>{13aaa086-4f6a-4251-820d-ab20a2d9c4fb}</Project>
