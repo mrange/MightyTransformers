@@ -1,0 +1,3 @@
+[submodule "MiniJson"]
+	path = MiniJson
+	url = https://github.com/mrange/MiniJson.git
