@@ -289,7 +289,7 @@ module XTransform =
       | XErrorTree.Empty  -> good (Some tr.Value)
       | _                 -> good None
 
-  let inline htoResult (t : XTransform<'T>) : XTransform<Result<'T, (string*XError) []>> =
+  let inline xtoResult (t : XTransform<'T>) : XTransform<Result<'T, (string*XError) []>> =
     let t = adapt t
     fun e p ->
       let tr = invoke t e p
