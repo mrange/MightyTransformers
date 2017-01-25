@@ -11,6 +11,8 @@ Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MightyTransformers.Xml", "M
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MiniJson", "..\..\MiniJson\src\MiniJson\MiniJson.fsproj", "{68C7233E-B616-4233-A3B8-6881F11DFB2F}"
 EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MightyTransformers.Json", "MightyTransformers.Json\MightyTransformers.Json.fsproj", "{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -69,6 +71,18 @@ Global
 		{68C7233E-B616-4233-A3B8-6881F11DFB2F}.Release|x64.Build.0 = Release|x64
 		{68C7233E-B616-4233-A3B8-6881F11DFB2F}.Release|x86.ActiveCfg = Release|x86
 		{68C7233E-B616-4233-A3B8-6881F11DFB2F}.Release|x86.Build.0 = Release|x86
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Debug|x64.Build.0 = Debug|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Debug|x86.Build.0 = Debug|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|x64.ActiveCfg = Release|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|x64.Build.0 = Release|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|x86.ActiveCfg = Release|Any CPU
+		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

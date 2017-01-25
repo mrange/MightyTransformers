@@ -1,4 +1,4 @@
-namespace MightyTransformers
+namespace MightyTransformers.Xml.AssemblyInfo
 
 open System.Reflection
 open System.Runtime.CompilerServices
