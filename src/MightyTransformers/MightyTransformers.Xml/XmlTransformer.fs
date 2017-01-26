@@ -1,5 +1,7 @@
 ﻿module MightyTransformers.Xml.XmlTransformer
 
+// TODO: Internalize Loops and Details
+
 open System.Text
 open System.Xml
 

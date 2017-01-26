@@ -1,5 +1,7 @@
 ﻿module MightyTransformers.Json.JsonTransformer
 
+// TODO: Internalize Loops and Details
+
 open System
 open System.Globalization
 open System.Text
