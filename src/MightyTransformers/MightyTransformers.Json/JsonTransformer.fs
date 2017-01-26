@@ -24,6 +24,9 @@ type JError =
   | IndexOutOfRange       of int
   | MemberNotFound        of string
   | NotAnArrayOrObject
+  | NotABool
+  | NotAFloat
+  | NotAString
   | NotAnObject
   | Warning               of string
 
@@ -243,6 +246,37 @@ module JTransform =
         | JsonString  _
         | JsonArray   _
         | JsonObject  _ -> false
+
+  let jbool : JTransform<bool> =
+    fun j p ->
+      match j with
+      | JsonBoolean v -> v |> good
+      | JsonNull
+      | JsonNumber  _
+      | JsonString  _
+      | JsonArray   _
+      | JsonObject  _ -> result false (JError.NotABool |> leaf p)
+
+  let jfloat : JTransform<float> =
+    fun j p ->
+      match j with
+      | JsonNumber  v -> v |> good
+      | JsonNull
+      | JsonBoolean _
+      | JsonString  _
+      | JsonArray   _
+      | JsonObject  _ -> result 0. (JError.NotAFloat |> leaf p)
+
+  let jstring : JTransform<string> =
+    fun j p ->
+      match j with
+      | JsonString  v -> v |> good
+      | JsonNull
+      | JsonBoolean _
+      | JsonNumber  _
+      | JsonString  _
+      | JsonArray   _
+      | JsonObject  _ -> result "" (JError.NotAString |> leaf p)
 
   let jasBool : JTransform<bool> =
     fun j p ->
