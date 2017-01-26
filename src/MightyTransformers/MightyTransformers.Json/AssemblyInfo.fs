@@ -1,4 +1,4 @@
-﻿namespace MightyTransformers.Json
+namespace MightyTransformers.Json
 
 open System.Reflection
 open System.Runtime.CompilerServices

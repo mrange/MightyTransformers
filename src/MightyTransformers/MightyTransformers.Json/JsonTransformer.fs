@@ -1,4 +1,4 @@
-﻿module MightyTransformers.Json.JsonTransformer
+module MightyTransformers.Json.JsonTransformer
 
 open System
 open System.Globalization
@@ -46,13 +46,13 @@ module Details =
   module Loops =
     let rec pathToString (sb : StringBuilder) p =
       match p with
-      | []    -> sb.Append "." |> ignore
+      | []    -> sb.Append "root" |> ignore
       | h::t  ->
         pathToString sb t
         match h with
         | JContextElement.Member n  -> sb.Append (sprintf ".%s"   n)  |> ignore
         | JContextElement.Index  i  -> sb.Append (sprintf ".[%d]" i)  |> ignore
-        | JContextElement.Named  n  -> sb.Append (sprintf "(%s)"  n) |> ignore
+        | JContextElement.Named  n  -> sb.Append (sprintf "(%s)"  n)  |> ignore
 
   let defaultSize     = 16
   let inline adapt f  = OptimizedClosures.FSharpFunc<_, _, _>.Adapt f
@@ -218,7 +218,7 @@ module JTransform =
   let inline jdebug name (t : JTransform<'T>) : JTransform<'T> =
     let t = adapt t
     fun j p ->
-      // let attrs = e.Attributes |> FsLinq.map (fun a -> a.Name, a.Value) |> FsLinq.toArray
+      // TODO: Print shallow json data
       printfn "BEFORE  %s: %A" name p
       let tr = invoke t j p
       match tr.ErrorTree with
@@ -235,7 +235,7 @@ module JTransform =
 
   let jisNull : JTransform<bool> =
     fun j p ->
-      good <| 
+      good <|
         match j with
         | JsonNull      -> true
         | JsonBoolean _
@@ -246,7 +246,7 @@ module JTransform =
 
   let jasBool : JTransform<bool> =
     fun j p ->
-      good <| 
+      good <|
         match j with
         | JsonNull      -> false
         | JsonBoolean v -> v
@@ -284,20 +284,39 @@ module JTransform =
     fun j p ->
       match j with
       | Json.JsonObject ms ->
+        let r = ResizeArray ms.Length
         // TODO: Extract into external loop to avoid allocations
-        let rec loop i =
+        let rec loop et i =
           if i < ms.Length then
-            let k, v = ms.[i]
-            if k = name then
-              let ip = (JContextElement.Member name)::p
-              t.Invoke v ip
-            else
-              loop (i + 1)
+            let _, v = ms.[i]
+            let ip = (JContextElement.Index i)::p
+            let tr = invoke t v ip
+            match tr.ErrorTree with
+            | JErrorTree.Empty -> r.Add tr.Value
+            | _     -> ()
+            loop (join et tr.ErrorTree) (i + 1)
           else
-            result v (name |> JError.MemberNotFound |> leaf p)
-        loop 0
-      | _ -> 
-        result v (JError.NotAnObject |> leaf p)
+            et
+        let et = loop JErrorTree.Empty 0
+        result (r.ToArray ()) et
+      | Json.JsonArray vs ->
+        let r = ResizeArray vs.Length
+        // TODO: Extract into external loop to avoid allocations
+        let rec loop et i =
+          if i < vs.Length then
+            let v = vs.[i]
+            let ip = (JContextElement.Index i)::p
+            let tr = invoke t v ip
+            match tr.ErrorTree with
+            | JErrorTree.Empty -> r.Add tr.Value
+            | _     -> ()
+            loop (join et tr.ErrorTree) (i + 1)
+          else
+            et
+        let et = loop JErrorTree.Empty 0
+        result (r.ToArray ()) et
+      | _ ->
+        result [||] (JError.NotAnArrayOrObject |> leaf p)
 
   let inline jmember name v (t : JTransform<'T>) : JTransform<'T> =
     let t = adapt t
@@ -310,16 +329,16 @@ module JTransform =
             let k, v = ms.[i]
             if k = name then
               let ip = (JContextElement.Member name)::p
-              t.Invoke v ip
+              invoke t v ip
             else
               loop (i + 1)
           else
             result v (name |> JError.MemberNotFound |> leaf p)
         loop 0
-      | _ -> 
+      | _ ->
         result v (JError.NotAnObject |> leaf p)
 
-  let inline jmemberz name t = 
+  let inline jmemberz name t =
     jmember name (zero ()) t
 
   let inline jindex idx v (t : JTransform<'T>) : JTransform<'T> =
@@ -333,7 +352,7 @@ module JTransform =
             let _ , v = ms.[i]
             if i = idx then
               let ip = (JContextElement.Index idx)::p
-              t.Invoke v ip
+              invoke t v ip
             else
               loop (i + 1)
           else
@@ -347,17 +366,17 @@ module JTransform =
             let v = vs.[i]
             if i = idx then
               let ip = (JContextElement.Index idx)::p
-              t.Invoke v ip
+              invoke t v ip
             else
               loop (i + 1)
           else
             // TODO: Precheck this condition
             result v (idx |> JError.IndexOutOfRange |> leaf p)
         loop 0
-      | _ -> 
+      | _ ->
         result v (JError.NotAnArrayOrObject |> leaf p)
 
-  let inline jindexz idx t = 
+  let inline jindexz idx t =
     jindex idx (zero ()) t
 
   type JBuilder() =

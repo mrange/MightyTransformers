@@ -53,7 +53,7 @@ module JsonTransformerTest =
     {
       FirstName   : string
       LastName    : string
-      YearOfBirth : int option
+      YearOfBirth : float option
       Works       : Work []
     }
 
@@ -110,18 +110,29 @@ module JsonTransformerTest =
 ]
 """
 
-    let jkind kind = jmember "kind" () (jasString >>= fun v -> if v = kind then jreturn () else jfailuref () "Expected kind '%s' but found '%s'" kind v)
+    let jkind kind =
+      jmember "kind" ()
+        (jasString >>= fun v -> if v = kind then jreturn () else jfailuref () "Expected kind '%s' but found '%s'" kind v)
 
-    let jtitle      = jmember "title" "" jasString
+    let jstr k      = jmember k "" jasString
+    let jtitle      = jstr "title"
     let jbook       = jkind "book"        >>. jtitle |>> Book
     let jmanuscript = jkind "manuscript"  >>. jtitle |>> Manuscript
     let jwork       = jbook <|> jmanuscript
+    let jworks      = jmember "works" [||] (jmany jwork)
+    let jauthor     =
+      jpure Author.New
+      <*> jstr      "name"
+      <*> jstr      "surname"
+      <*> (jmemberz "birth"   jasFloat |> jtoOption)
+      <*> jworks
+    let jauthors    = jmany jauthor
 
     match parse true json with
-    | ParseResult.Success json       -> 
-
-      infof "Successfully parsed json: %A" json
-    | ParseResult.Failure (msg, pos) -> 
+    | ParseResult.Success json       ->
+      let jres = jrun jauthors json
+      infof "%A" jres
+    | ParseResult.Failure (msg, pos) ->
       errorf "Failed to parse json: %s" msg
 
     ()
@@ -190,12 +201,13 @@ module XmlTransformerTest =
     let xbook         = xcheck (xqhasName xnbook)       >>. (xattributez xntitle |>> Book)
     let xmanuscript   = xcheck (xqhasName xnmanuscript) >>. (xattributez xntitle |>> Manuscript)
     let xwork         = xbook <|> xmanuscript
+    let xworks        = (xelements xqtrue xwork)
     let xauthor       =
       xpure Author.New
       <*> (xattributez xnname)
       <*> (xattributez xnsurname)
       <*> (xattributez xnbirth |> xtoInt32 |> xtoOption)
-      <*> (xelements xqtrue xwork)
+      <*> xworks
     let xauthors    = xcheck (xqhasName xnauthors) >>. xelements xqtrue xauthor
 
     let xdoc = XmlDocument ()
