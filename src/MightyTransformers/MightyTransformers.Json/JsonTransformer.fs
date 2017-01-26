@@ -1,4 +1,4 @@
-module MightyTransformers.Json.JsonTransformer
+﻿module MightyTransformers.Json.JsonTransformer
 
 open System
 open System.Globalization
@@ -313,41 +313,53 @@ module JTransform =
 
   // Queries
 
+  module Loops =
+    let rec jmany t p (r : ResizeArray<_>) (ms : _ []) m et i =
+      if i < ms.Length then
+        let v = m ms.[i]
+        let ip = (JContextElement.Index i)::p
+        let tr = invoke t v ip
+        match tr.ErrorTree with
+        | JErrorTree.Empty -> r.Add tr.Value
+        | _     -> ()
+        jmany t p r ms m (join et tr.ErrorTree) (i + 1)
+      else
+        et
+
+    let rec jmember name dv t p (ms : _ []) i =
+      if i < ms.Length then
+        let k, v = ms.[i]
+        if k = name then
+          let ip = (JContextElement.Member name)::p
+          invoke t v ip
+        else
+          jmember name dv t p ms (i + 1)
+      else
+        result dv (name |> JError.MemberNotFound |> leaf p)
+
+    let rec jindex idx dv t p m (ms : _ []) i =
+      if i < ms.Length then
+        if i = idx then
+          let v = m ms.[i]
+          let ip = (JContextElement.Index idx)::p
+          invoke t v ip
+        else
+          jindex idx dv t p m ms (i + 1)
+      else
+        // TODO: Precheck this condition
+        result dv (idx |> JError.IndexOutOfRange |> leaf p)
+
   let inline jmany (t : JTransform<'T>) : JTransform<'T []> =
     let t = adapt t
     fun j p ->
       match j with
       | Json.JsonObject ms ->
         let r = ResizeArray ms.Length
-        // TODO: Extract into external loop to avoid allocations
-        let rec loop et i =
-          if i < ms.Length then
-            let _, v = ms.[i]
-            let ip = (JContextElement.Index i)::p
-            let tr = invoke t v ip
-            match tr.ErrorTree with
-            | JErrorTree.Empty -> r.Add tr.Value
-            | _     -> ()
-            loop (join et tr.ErrorTree) (i + 1)
-          else
-            et
-        let et = loop JErrorTree.Empty 0
+        let et = Loops.jmany t p r ms snd JErrorTree.Empty 0
         result (r.ToArray ()) et
       | Json.JsonArray vs ->
         let r = ResizeArray vs.Length
-        // TODO: Extract into external loop to avoid allocations
-        let rec loop et i =
-          if i < vs.Length then
-            let v = vs.[i]
-            let ip = (JContextElement.Index i)::p
-            let tr = invoke t v ip
-            match tr.ErrorTree with
-            | JErrorTree.Empty -> r.Add tr.Value
-            | _     -> ()
-            loop (join et tr.ErrorTree) (i + 1)
-          else
-            et
-        let et = loop JErrorTree.Empty 0
+        let et = Loops.jmany t p r vs id JErrorTree.Empty 0
         result (r.ToArray ()) et
       | _ ->
         result [||] (JError.NotAnArrayOrObject |> leaf p)
@@ -357,18 +369,7 @@ module JTransform =
     fun j p ->
       match j with
       | Json.JsonObject ms ->
-        // TODO: Extract into external loop to avoid allocations
-        let rec loop i =
-          if i < ms.Length then
-            let k, v = ms.[i]
-            if k = name then
-              let ip = (JContextElement.Member name)::p
-              invoke t v ip
-            else
-              loop (i + 1)
-          else
-            result v (name |> JError.MemberNotFound |> leaf p)
-        loop 0
+        Loops.jmember name v t p ms 0
       | _ ->
         result v (JError.NotAnObject |> leaf p)
 
@@ -380,33 +381,9 @@ module JTransform =
     fun j p ->
       match j with
       | Json.JsonObject ms ->
-        // TODO: Extract into external loop to avoid allocations
-        let rec loop i =
-          if i < ms.Length then
-            let _ , v = ms.[i]
-            if i = idx then
-              let ip = (JContextElement.Index idx)::p
-              invoke t v ip
-            else
-              loop (i + 1)
-          else
-            // TODO: Precheck this condition
-            result v (idx |> JError.IndexOutOfRange |> leaf p)
-        loop 0
+        Loops.jindex idx v t p snd ms 0
       | Json.JsonArray vs ->
-        // TODO: Extract into external loop to avoid allocations
-        let rec loop i =
-          if i < vs.Length then
-            let v = vs.[i]
-            if i = idx then
-              let ip = (JContextElement.Index idx)::p
-              invoke t v ip
-            else
-              loop (i + 1)
-          else
-            // TODO: Precheck this condition
-            result v (idx |> JError.IndexOutOfRange |> leaf p)
-        loop 0
+        Loops.jindex idx v t p id vs 0
       | _ ->
         result v (JError.NotAnArrayOrObject |> leaf p)
 
