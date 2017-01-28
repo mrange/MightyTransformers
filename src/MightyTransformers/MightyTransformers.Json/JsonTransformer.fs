@@ -126,7 +126,7 @@ module JTransform =
 
   let inline jpure v = jreturn v
 
-  let inline jap (t : JTransform<'U -> 'V>) (u : JTransform<'U>) : JTransform<'V> =
+  let inline japply (t : JTransform<'U -> 'V>) (u : JTransform<'U>) : JTransform<'V> =
     let t = adapt t
     let u = adapt u
     fun j p ->
@@ -400,7 +400,7 @@ module JTransform =
   module Infixes =
     let inline (>>=)  t uf  = jbind      t uf
     let inline (>=>) tf uf  = jkleisli  tf uf
-    let inline (<*>) tf u   = jap       tf u
+    let inline (<*>) tf u   = japply    tf u
     let inline (|>>)  t m   = jmap       m t
     let inline (<|>)  l r   = jorElse    l r
     let inline (.>>.) l r   = jpair      l r

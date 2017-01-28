@@ -227,7 +227,7 @@ module XTransform =
 
   let inline xpure v = xreturn v
 
-  let inline xap (t : XTransform<'U -> 'V>) (u : XTransform<'U>) : XTransform<'V> =
+  let inline xapply (t : XTransform<'U -> 'V>) (u : XTransform<'U>) : XTransform<'V> =
     let t = adapt t
     let u = adapt u
     fun e p ->
@@ -524,7 +524,7 @@ module XTransform =
   module Infixes =
     let inline (>>=)  t uf  = xbind      t uf
     let inline (>=>) tf uf  = xkleisli  tf uf
-    let inline (<*>) tf u   = xap       tf u
+    let inline (<*>) tf u   = xapply    tf u
     let inline (|>>)  t m   = xmap       m t
     let inline (<|>)  l r   = xorElse    l r
     let inline (.>>.) l r   = xpair      l r

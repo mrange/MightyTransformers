@@ -138,7 +138,53 @@ module JsonTransformerTest =
 
     ()
 
+  module Functionality =
+    let expect e a =
+      if e <> a then
+        errorf "%A <> %A" e a
+
+    let jexpect jv jerrs j =
+      let a = jrun j Json.JsonNull
+      expect (jv, jerrs) a
+
+    let jok  v= jreturn  v
+    let jok1  = jok 1
+    let jok2  = jok 2
+    let jerr c= jfailure 0 "Error" |> jwithContext c
+    let jerr1 = jerr "1"
+    let jerr2 = jerr "2"
+    let jres1 = "root(1)", JError.Failure "Error"
+    let jres2 = "root(2)", JError.Failure "Error"
+
+    let test_jreturn () =
+      jexpect 1 [||] <| jok1
+
+    let test_jpair () =
+      jexpect (1,2) [||]              <| jpair jok1  jok2
+      jexpect (1,0) [|jres2|]         <| jpair jok1  jerr2
+      jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
+      jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
+
+    let test_jkeepLeft () =
+      jexpect 1 [||]              <| jkeepLeft jok1  jok2
+      jexpect 1 [|jres2|]         <| jkeepLeft jok1  jerr2
+      jexpect 0 [|jres1|]         <| jkeepLeft jerr1 jok2
+      jexpect 0 [|jres1; jres2|]  <| jkeepLeft jerr1 jerr2
+
+    let test_jkeepRight () =
+      jexpect 2 [||]              <| jkeepRight jok1  jok2
+      jexpect 0 [|jres2|]         <| jkeepRight jok1  jerr2
+      jexpect 2 [|jres1|]         <| jkeepRight jerr1 jok2
+      jexpect 0 [|jres1; jres2|]  <| jkeepRight jerr1 jerr2
+
+    let run () =
+      test_jreturn    ()
+      test_jpair      ()
+      test_jkeepLeft  ()
+      test_jkeepRight ()
+
   let run () =
+    Functionality.run ()
     testAuthorsTransform ()
 
 module XmlTransformerTest =
