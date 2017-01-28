@@ -20,9 +20,9 @@ type JContext = JContextElement list
 
 [<RequireQualifiedAccess>]
 type JError =
-  | Failure               of string
   | CanNotConvertToFloat
   | CanNotConvertToString
+  | Failure               of string
   | IndexOutOfRange       of int
   | MemberNotFound        of string
   | NotAnArrayOrObject

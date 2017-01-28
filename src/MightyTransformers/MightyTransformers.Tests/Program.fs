@@ -121,11 +121,12 @@ module JsonTransformerTest =
     let jwork       = jbook <|> jmanuscript
     let jworks      = jmember "works" [||] (jmany jwork)
     let jauthor     =
-      jpure Author.New
-      <*> jstr      "name"
-      <*> jstr      "surname"
-      <*> (jmemberz "birth"   jasFloat |> jtoOption)
-      <*> jworks
+      jpair (jstr "name") (jstr "surname")
+      >>= fun (name, surname) ->
+        jpure (Author.New name surname)
+        <*> (jmemberz "birth" jasFloat |> jtoOption)
+        <*> jworks
+        |> jwithContext (sprintf "%s %s" name surname)
     let jauthors    = jmany jauthor
 
     match parse true json with
@@ -208,6 +209,13 @@ module XmlTransformerTest =
       <*> (xattributez xnsurname)
       <*> (xattributez xnbirth |> xtoInt32 |> xtoOption)
       <*> xworks
+    let xauthor       =
+      xpair (xattributez xnname) (xattributez xnsurname)
+      >>= fun (name, surname) ->
+        xpure (Author.New name surname)
+        <*> (xattributez xnbirth |> xtoInt32 |> xtoOption)
+        <*> xworks
+        |> xwithContext (sprintf "%s %s" name surname)
     let xauthors    = xcheck (xqhasName xnauthors) >>. xelements xqtrue xauthor
 
     let xdoc = XmlDocument ()
@@ -228,7 +236,7 @@ let main argv =
     Environment.CurrentDirectory <- AppDomain.CurrentDomain.BaseDirectory
 
     JsonTransformerTest.run ()
-    //XmlTransformerTest.run ()
+    XmlTransformerTest.run ()
 
     if Common.errorTraceCount > 0 then
       errorf "Detected %d error(s)" Common.errorTraceCount
