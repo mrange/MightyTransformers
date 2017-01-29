@@ -194,12 +194,18 @@ module JsonTransformerTest =
       jexpect 2 [|jres1|]         <| japply (jerr  id "1" ) jok2
       jexpect 0 [|jres1; jres2|]  <| japply (jerr  id "1" ) jerr2
 
-    let test_jpair () =
-      info "test_jpair"
-      jexpect (1,2) [||]              <| jpair jok1  jok2
-      jexpect (1,0) [|jres2|]         <| jpair jok1  jerr2
-      jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
-      jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
+    let test_jmap () =
+      info "test_jmap"
+      let f = (+) 1
+      jexpect 2 [||]              <| jmap f jok1
+      jexpect 1 [|jres1|]         <| jmap f jerr1
+
+    let test_jorElse () =
+      info "test_jorElse"
+      jexpect 1 [||]              <| jorElse jok1   jok2
+      jexpect 1 [||]              <| jorElse jok1   jerr2
+      jexpect 2 [||]              <| jorElse jerr1  jok2
+      jexpect 0 [|jres1; jres2|]  <| jorElse jerr1  jerr2
 
     let test_jkeepLeft () =
       info "test_jkeepLeft"
@@ -215,6 +221,13 @@ module JsonTransformerTest =
       jexpect 2 [|jres1|]         <| jkeepRight jerr1 jok2
       jexpect 0 [|jres1; jres2|]  <| jkeepRight jerr1 jerr2
 
+    let test_jpair () =
+      info "test_jpair"
+      jexpect (1,2) [||]              <| jpair jok1  jok2
+      jexpect (1,0) [|jres2|]         <| jpair jok1  jerr2
+      jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
+      jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
+
     let run () =
       test_jreturn    ()
       test_jbind      ()
@@ -222,9 +235,11 @@ module JsonTransformerTest =
       test_jkleisli   ()
       test_jpure      ()
       test_japply     ()
-      test_jpair      ()
+      test_jmap       ()
+      test_jorElse    ()
       test_jkeepLeft  ()
       test_jkeepRight ()
+      test_jpair      ()
 
   let run () =
     Functionality.run ()
