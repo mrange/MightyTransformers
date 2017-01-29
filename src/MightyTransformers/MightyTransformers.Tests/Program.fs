@@ -151,13 +151,32 @@ module JsonTransformerTest =
     let jok1  = jok 1
     let jok2  = jok 2
     let jerr c= jfailure 0 "Error" |> jwithContext c
+    let jerr0 = jerr "0"
     let jerr1 = jerr "1"
     let jerr2 = jerr "2"
+    let jfok  = jarr ((+) 1)
+    let jferr = fun v -> jerr (v.ToString ())
+    let jres0 = "root(0)", JError.Failure "Error"
     let jres1 = "root(1)", JError.Failure "Error"
     let jres2 = "root(2)", JError.Failure "Error"
 
     let test_jreturn () =
       jexpect 1 [||] <| jok1
+
+    let test_jbind () =
+      jexpect 2 [||]              <| jbind jok1  jfok
+      jexpect 0 [|jres1|]         <| jbind jok1  jferr
+      jexpect 1 [|jres1|]         <| jbind jerr1 jfok
+      jexpect 0 [|jres1; jres0|]  <| jbind jerr1 jferr
+
+    let test_jarr () =
+      jexpect 2 [||] <| jfok 1
+
+    let test_jkleisli () =
+      jexpect 3 [||]              <| jkleisli jfok  jfok  1
+      jexpect 0 [|jres2|]         <| jkleisli jfok  jferr 1
+      jexpect 1 [|jres1|]         <| jkleisli jferr jfok  1
+      jexpect 0 [|jres1; jres0|]  <| jkleisli jferr jferr 1
 
     let test_jpair () =
       jexpect (1,2) [||]              <| jpair jok1  jok2
@@ -179,6 +198,9 @@ module JsonTransformerTest =
 
     let run () =
       test_jreturn    ()
+      test_jbind      ()
+      test_jarr       ()
+      test_jkleisli   ()
       test_jpair      ()
       test_jkeepLeft  ()
       test_jkeepRight ()
