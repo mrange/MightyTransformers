@@ -339,18 +339,6 @@ module JTransform =
       else
         result dv (name |> JError.MemberNotFound |> leaf p)
 
-    let rec jindex idx dv t p m (ms : _ []) i =
-      if i < ms.Length then
-        if i = idx then
-          let v = m ms.[i]
-          let ip = (JContextElement.Index idx)::p
-          invoke t v ip
-        else
-          jindex idx dv t p m ms (i + 1)
-      else
-        // TODO: Precheck this condition
-        result dv (idx |> JError.IndexOutOfRange |> leaf p)
-
   let inline jmany (t : JTransform<'T>) : JTransform<'T []> =
     let t = adapt t
     fun j p ->
@@ -380,12 +368,20 @@ module JTransform =
 
   let inline jindex idx v (t : JTransform<'T>) : JTransform<'T> =
     let t = adapt t
+    // TODO: Check IL to ensure no unnecessary objects created
+    let inline jindex idx dv t p m (ms : _ []) =
+      if idx >= 0 && idx < ms.Length then
+        let v = m ms.[idx]
+        let ip = (JContextElement.Index idx)::p
+        invoke t v ip
+      else
+        result dv (idx |> JError.IndexOutOfRange |> leaf p)
     fun j p ->
       match j with
       | Json.JsonObject ms ->
-        Loops.jindex idx v t p snd ms 0
+        jindex idx v t p snd ms
       | Json.JsonArray vs ->
-        Loops.jindex idx v t p id vs 0
+        jindex idx v t p id vs
       | _ ->
         result v (JError.NotAnArrayOrObject |> leaf p)
 

@@ -145,11 +145,8 @@ module JsonTransformerTest =
       if e <> a then
         errorf "%A <> %A" e a
 
-    let jexpect jv jerrs j =
-      let a = jrun j Json.JsonNull
-      expect (jv, jerrs) a
-
     let jok  v    = jreturn  v
+    let jok0      = jok 0
     let jok1      = jok 1
     let jok2      = jok 2
     let jerr v c  = jfailure v "Error" |> jwithContext c
@@ -162,132 +159,185 @@ module JsonTransformerTest =
     let jres1     = "root(1)", JError.Failure "Error"
     let jres2     = "root(2)", JError.Failure "Error"
 
-    let test_jreturn () =
-      info "test_jreturn"
-      jexpect 1 [||] <| jreturn 1
+    module Primitives =
+      let jexpect jv jerrs j =
+        let a = jrun j Json.JsonNull
+        expect (jv, jerrs) a
 
-    let test_jbind () =
-      info "test_jbind"
-      jexpect 2 [||]              <| jbind jok1  jfok
-      jexpect 0 [|jres1|]         <| jbind jok1  jferr
-      jexpect 1 [|jres1|]         <| jbind jerr1 jfok
-      jexpect 0 [|jres1; jres0|]  <| jbind jerr1 jferr
+      let test_jreturn () =
+        info "test_jreturn"
+        jexpect 1 [||] <| jreturn 1
 
-    let test_jarr () =
-      info "test_jarr"
-      jexpect 2 [||] <| jfok 1
+      let test_jbind () =
+        info "test_jbind"
+        jexpect 2 [||]              <| jbind jok1  jfok
+        jexpect 0 [|jres1|]         <| jbind jok1  jferr
+        jexpect 1 [|jres1|]         <| jbind jerr1 jfok
+        jexpect 0 [|jres1; jres0|]  <| jbind jerr1 jferr
 
-    let test_jkleisli () =
-      info "test_jkleisli"
-      jexpect 3 [||]              <| jkleisli jfok  jfok  1
-      jexpect 0 [|jres2|]         <| jkleisli jfok  jferr 1
-      jexpect 1 [|jres1|]         <| jkleisli jferr jfok  1
-      jexpect 0 [|jres1; jres0|]  <| jkleisli jferr jferr 1
+      let test_jarr () =
+        info "test_jarr"
+        jexpect 2 [||] <| jfok 1
 
-    let test_jpure () =
-      info "test_jpure"
-      jexpect 1 [||] <| jpure 1
+      let test_jkleisli () =
+        info "test_jkleisli"
+        jexpect 3 [||]              <| jkleisli jfok  jfok  1
+        jexpect 0 [|jres2|]         <| jkleisli jfok  jferr 1
+        jexpect 1 [|jres1|]         <| jkleisli jferr jfok  1
+        jexpect 0 [|jres1; jres0|]  <| jkleisli jferr jferr 1
 
-    let test_japply () =
-      info "test_japply"
-      let f = (+) 1
-      jexpect 3 [||]              <| japply (jpure f      ) jok2
-      jexpect 1 [|jres2|]         <| japply (jpure f      ) jerr2
-      jexpect 2 [|jres1|]         <| japply (jerr  id "1" ) jok2
-      jexpect 0 [|jres1; jres2|]  <| japply (jerr  id "1" ) jerr2
+      let test_jpure () =
+        info "test_jpure"
+        jexpect 1 [||] <| jpure 1
 
-    let test_jmap () =
-      info "test_jmap"
-      let f = (+) 1
-      jexpect 2 [||]              <| jmap f jok1
-      jexpect 1 [|jres1|]         <| jmap f jerr1
+      let test_japply () =
+        info "test_japply"
+        let f = (+) 1
+        jexpect 3 [||]              <| japply (jpure f      ) jok2
+        jexpect 1 [|jres2|]         <| japply (jpure f      ) jerr2
+        jexpect 2 [|jres1|]         <| japply (jerr  id "1" ) jok2
+        jexpect 0 [|jres1; jres2|]  <| japply (jerr  id "1" ) jerr2
 
-    let test_jorElse () =
-      info "test_jorElse"
-      jexpect 1 [||]              <| jorElse jok1   jok2
-      jexpect 1 [||]              <| jorElse jok1   jerr2
-      jexpect 2 [||]              <| jorElse jerr1  jok2
-      jexpect 0 [|jres1; jres2|]  <| jorElse jerr1  jerr2
+      let test_jmap () =
+        info "test_jmap"
+        let f = (+) 1
+        jexpect 2 [||]              <| jmap f jok1
+        jexpect 1 [|jres1|]         <| jmap f jerr1
 
-    let test_jkeepLeft () =
-      info "test_jkeepLeft"
-      jexpect 1 [||]              <| jkeepLeft jok1  jok2
-      jexpect 1 [|jres2|]         <| jkeepLeft jok1  jerr2
-      jexpect 0 [|jres1|]         <| jkeepLeft jerr1 jok2
-      jexpect 0 [|jres1; jres2|]  <| jkeepLeft jerr1 jerr2
+      let test_jorElse () =
+        info "test_jorElse"
+        jexpect 1 [||]              <| jorElse jok1   jok2
+        jexpect 1 [||]              <| jorElse jok1   jerr2
+        jexpect 2 [||]              <| jorElse jerr1  jok2
+        jexpect 0 [|jres1; jres2|]  <| jorElse jerr1  jerr2
 
-    let test_jkeepRight () =
-      info "test_jkeepRight"
-      jexpect 2 [||]              <| jkeepRight jok1  jok2
-      jexpect 0 [|jres2|]         <| jkeepRight jok1  jerr2
-      jexpect 2 [|jres1|]         <| jkeepRight jerr1 jok2
-      jexpect 0 [|jres1; jres2|]  <| jkeepRight jerr1 jerr2
+      let test_jkeepLeft () =
+        info "test_jkeepLeft"
+        jexpect 1 [||]              <| jkeepLeft jok1  jok2
+        jexpect 1 [|jres2|]         <| jkeepLeft jok1  jerr2
+        jexpect 0 [|jres1|]         <| jkeepLeft jerr1 jok2
+        jexpect 0 [|jres1; jres2|]  <| jkeepLeft jerr1 jerr2
 
-    let test_jpair () =
-      info "test_jpair"
-      jexpect (1,2) [||]              <| jpair jok1  jok2
-      jexpect (1,0) [|jres2|]         <| jpair jok1  jerr2
-      jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
-      jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
+      let test_jkeepRight () =
+        info "test_jkeepRight"
+        jexpect 2 [||]              <| jkeepRight jok1  jok2
+        jexpect 0 [|jres2|]         <| jkeepRight jok1  jerr2
+        jexpect 2 [|jres1|]         <| jkeepRight jerr1 jok2
+        jexpect 0 [|jres1; jres2|]  <| jkeepRight jerr1 jerr2
 
-    let test_jtoOption () =
-      info "test_jtoOption"
-      jexpect (Some 1)  [||]          <| jtoOption jok1
-      jexpect None      [||]          <| jtoOption jerr1
+      let test_jpair () =
+        info "test_jpair"
+        jexpect (1,2) [||]              <| jpair jok1  jok2
+        jexpect (1,0) [|jres2|]         <| jpair jok1  jerr2
+        jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
+        jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
 
-    let test_jtoResult () =
-      info "test_jtoResult"
-      jexpect (Good 1)        [||]    <| jtoResult jok1
-      jexpect (Bad [|jres1|]) [||]    <| jtoResult jerr1
+      let test_jtoOption () =
+        info "test_jtoOption"
+        jexpect (Some 1)  [||]          <| jtoOption jok1
+        jexpect None      [||]          <| jtoOption jerr1
 
-    let test_jfailure () =
-      info "test_jfailure"
-      jexpect 0 [|"root", JError.Failure "Hello"|] <| jfailure 0 "Hello"
-      jexpect 0 [|"root", JError.Failure "There"|] <| jfailure 0 "There"
+      let test_jtoResult () =
+        info "test_jtoResult"
+        jexpect (Good 1)        [||]    <| jtoResult jok1
+        jexpect (Bad [|jres1|]) [||]    <| jtoResult jerr1
 
-    let test_jfailuref () =
-      info "test_jfailuref"
-      jexpect 0 [|"root", JError.Failure "Hello there"|] <| jfailuref 0 "Hello %s" "there"
+      let test_jfailure () =
+        info "test_jfailure"
+        jexpect 0 [|"root", JError.Failure "Hello"|] <| jfailure 0 "Hello"
+        jexpect 0 [|"root", JError.Failure "There"|] <| jfailure 0 "There"
 
-    let test_jwarning () =
-      info "test_jwarning"
-      jexpect 0 [|"root", JError.Warning "Hello"|] <| jwarning 0 "Hello"
-      jexpect 0 [|"root", JError.Warning "There"|] <| jwarning 0 "There"
+      let test_jfailuref () =
+        info "test_jfailuref"
+        jexpect 0 [|"root", JError.Failure "Hello there"|] <| jfailuref 0 "Hello %s" "there"
 
-    let test_jwarningf () =
-      info "test_jwarningf"
-      jexpect 0 [|"root", JError.Warning "Hello there"|] <| jwarningf 0 "Hello %s" "there"
+      let test_jwarning () =
+        info "test_jwarning"
+        jexpect 0 [|"root", JError.Warning "Hello"|] <| jwarning 0 "Hello"
+        jexpect 0 [|"root", JError.Warning "There"|] <| jwarning 0 "There"
 
-    let test_jwithContext () =
-      info "test_jwithContext"
-      jexpect 1 [||]                                          <| jwithContext "Hello" jok1
-      jexpect 0 [|"root(Hello)(1)", JError.Failure "Error"|]  <| jwithContext "Hello" jerr1
+      let test_jwarningf () =
+        info "test_jwarningf"
+        jexpect 0 [|"root", JError.Warning "Hello there"|] <| jwarningf 0 "Hello %s" "there"
 
-    let test_jdebug () =
-      info "test_jdebug"
-      jexpect 1 [||]              <| jdebug "Hello" jok1
-      jexpect 0 [|jres1|]         <| jdebug "There" jerr1
+      let test_jwithContext () =
+        info "test_jwithContext"
+        jexpect 1 [||]                                          <| jwithContext "Hello" jok1
+        jexpect 0 [|"root(Hello)(1)", JError.Failure "Error"|]  <| jwithContext "Hello" jerr1
+
+      let test_jdebug () =
+        info "test_jdebug"
+        jexpect 1 [||]              <| jdebug "Hello" jok1
+        jexpect 0 [|jres1|]         <| jdebug "There" jerr1
+
+      let run () =
+        test_jreturn      ()
+        test_jbind        ()
+        test_jarr         ()
+        test_jkleisli     ()
+        test_jpure        ()
+        test_japply       ()
+        test_jmap         ()
+        test_jorElse      ()
+        test_jkeepLeft    ()
+        test_jkeepRight   ()
+        test_jpair        ()
+        test_jtoOption    ()
+        test_jtoResult    ()
+        test_jfailure     ()
+        test_jfailuref    ()
+        test_jwarning     ()
+        test_jwarningf    ()
+        test_jwithContext ()
+        test_jdebug       ()
+
+    // TODO: test_jrun
+
+    module Extractors =
+      let jexpect jv jerrs t json =
+        expect (jv, jerrs) <| jrun t json
+
+      let jnull   = Json.JsonNull
+      let jfalse  = Json.JsonBoolean false
+      let jtrue   = Json.JsonBoolean true
+      let jfloat0 = Json.JsonNumber  0.0
+      let jfloat1 = Json.JsonNumber  1.0
+      let jhello  = Json.JsonString  "Hello"
+      let jws     = Json.JsonString  ""
+      let jerr e  = "root", e
+
+      let test_jisNull () =
+        info "test_jisNull"
+        jexpect true  [||] jisNull <| jnull
+        jexpect false [||] jisNull <| jfalse
+
+      let test_jbool () =
+        info "test_jbool"
+        jexpect false [||]                      jbool <| jfalse
+        jexpect true  [||]                      jbool <| jtrue
+        jexpect false [|jerr JError.NotABool|]  jbool <| jnull
+
+      let test_jfloat () =
+        info "test_jfloat"
+        jexpect 0.  [||]                      jfloat <| jfloat0
+        jexpect 1.  [||]                      jfloat <| jfloat1
+        jexpect 0.  [|jerr JError.NotAFloat|] jfloat <| jnull
+
+      let test_jstring () =
+        info "test_jstring"
+        jexpect ""      [||]                        jstring <| jws
+        jexpect "Hello" [||]                        jstring <| jhello
+        jexpect ""      [|jerr JError.NotAString|]  jstring <| jnull
+
+      let run () =
+        test_jisNull  ()
+        test_jbool    ()
+        test_jfloat   ()
+        test_jstring  ()
 
     let run () =
-      test_jreturn      ()
-      test_jbind        ()
-      test_jarr         ()
-      test_jkleisli     ()
-      test_jpure        ()
-      test_japply       ()
-      test_jmap         ()
-      test_jorElse      ()
-      test_jkeepLeft    ()
-      test_jkeepRight   ()
-      test_jpair        ()
-      test_jtoOption    ()
-      test_jtoResult    ()
-      test_jfailure     ()
-      test_jfailuref    ()
-      test_jwarning     ()
-      test_jwarningf    ()
-      test_jwithContext ()
-      test_jdebug       ()
+      Primitives.run ()
+      Extractors.run ()
 
   let run () =
     Functionality.run ()
