@@ -147,50 +147,69 @@ module JsonTransformerTest =
       let a = jrun j Json.JsonNull
       expect (jv, jerrs) a
 
-    let jok  v= jreturn  v
-    let jok1  = jok 1
-    let jok2  = jok 2
-    let jerr c= jfailure 0 "Error" |> jwithContext c
-    let jerr0 = jerr "0"
-    let jerr1 = jerr "1"
-    let jerr2 = jerr "2"
-    let jfok  = jarr ((+) 1)
-    let jferr = fun v -> jerr (v.ToString ())
-    let jres0 = "root(0)", JError.Failure "Error"
-    let jres1 = "root(1)", JError.Failure "Error"
-    let jres2 = "root(2)", JError.Failure "Error"
+    let jok  v    = jreturn  v
+    let jok1      = jok 1
+    let jok2      = jok 2
+    let jerr v c  = jfailure v "Error" |> jwithContext c
+    let jerr0     = jerr 0 "0"
+    let jerr1     = jerr 0 "1"
+    let jerr2     = jerr 0 "2"
+    let jfok      = jarr ((+) 1)
+    let jferr     = fun v -> jerr 0 (v.ToString ())
+    let jres0     = "root(0)", JError.Failure "Error"
+    let jres1     = "root(1)", JError.Failure "Error"
+    let jres2     = "root(2)", JError.Failure "Error"
 
     let test_jreturn () =
-      jexpect 1 [||] <| jok1
+      info "test_jreturn"
+      jexpect 1 [||] <| jreturn 1
 
     let test_jbind () =
+      info "test_jbind"
       jexpect 2 [||]              <| jbind jok1  jfok
       jexpect 0 [|jres1|]         <| jbind jok1  jferr
       jexpect 1 [|jres1|]         <| jbind jerr1 jfok
       jexpect 0 [|jres1; jres0|]  <| jbind jerr1 jferr
 
     let test_jarr () =
+      info "test_jarr"
       jexpect 2 [||] <| jfok 1
 
     let test_jkleisli () =
+      info "test_jkleisli"
       jexpect 3 [||]              <| jkleisli jfok  jfok  1
       jexpect 0 [|jres2|]         <| jkleisli jfok  jferr 1
       jexpect 1 [|jres1|]         <| jkleisli jferr jfok  1
       jexpect 0 [|jres1; jres0|]  <| jkleisli jferr jferr 1
 
+    let test_jpure () =
+      info "test_jpure"
+      jexpect 1 [||] <| jpure 1
+
+    let test_japply () =
+      info "test_japply"
+      let f = (+) 1
+      jexpect 3 [||]              <| japply (jpure f      ) jok2
+      jexpect 1 [|jres2|]         <| japply (jpure f      ) jerr2
+      jexpect 2 [|jres1|]         <| japply (jerr  id "1" ) jok2
+      jexpect 0 [|jres1; jres2|]  <| japply (jerr  id "1" ) jerr2
+
     let test_jpair () =
+      info "test_jpair"
       jexpect (1,2) [||]              <| jpair jok1  jok2
       jexpect (1,0) [|jres2|]         <| jpair jok1  jerr2
       jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
       jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
 
     let test_jkeepLeft () =
+      info "test_jkeepLeft"
       jexpect 1 [||]              <| jkeepLeft jok1  jok2
       jexpect 1 [|jres2|]         <| jkeepLeft jok1  jerr2
       jexpect 0 [|jres1|]         <| jkeepLeft jerr1 jok2
       jexpect 0 [|jres1; jres2|]  <| jkeepLeft jerr1 jerr2
 
     let test_jkeepRight () =
+      info "test_jkeepRight"
       jexpect 2 [||]              <| jkeepRight jok1  jok2
       jexpect 0 [|jres2|]         <| jkeepRight jok1  jerr2
       jexpect 2 [|jres1|]         <| jkeepRight jerr1 jok2
@@ -201,6 +220,8 @@ module JsonTransformerTest =
       test_jbind      ()
       test_jarr       ()
       test_jkleisli   ()
+      test_jpure      ()
+      test_japply     ()
       test_jpair      ()
       test_jkeepLeft  ()
       test_jkeepRight ()
