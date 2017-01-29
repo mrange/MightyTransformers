@@ -139,6 +139,8 @@ module JsonTransformerTest =
     ()
 
   module Functionality =
+    open MightyTransformers.Common
+
     let expect e a =
       if e <> a then
         errorf "%A <> %A" e a
@@ -228,18 +230,64 @@ module JsonTransformerTest =
       jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
       jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
 
+    let test_jtoOption () =
+      info "test_jtoOption"
+      jexpect (Some 1)  [||]          <| jtoOption jok1
+      jexpect None      [||]          <| jtoOption jerr1
+
+    let test_jtoResult () =
+      info "test_jtoResult"
+      jexpect (Good 1)        [||]    <| jtoResult jok1
+      jexpect (Bad [|jres1|]) [||]    <| jtoResult jerr1
+
+    let test_jfailure () =
+      info "test_jfailure"
+      jexpect 0 [|"root", JError.Failure "Hello"|] <| jfailure 0 "Hello"
+      jexpect 0 [|"root", JError.Failure "There"|] <| jfailure 0 "There"
+
+    let test_jfailuref () =
+      info "test_jfailuref"
+      jexpect 0 [|"root", JError.Failure "Hello there"|] <| jfailuref 0 "Hello %s" "there"
+
+    let test_jwarning () =
+      info "test_jwarning"
+      jexpect 0 [|"root", JError.Warning "Hello"|] <| jwarning 0 "Hello"
+      jexpect 0 [|"root", JError.Warning "There"|] <| jwarning 0 "There"
+
+    let test_jwarningf () =
+      info "test_jwarningf"
+      jexpect 0 [|"root", JError.Warning "Hello there"|] <| jwarningf 0 "Hello %s" "there"
+
+    let test_jwithContext () =
+      info "test_jwithContext"
+      jexpect 1 [||]                                          <| jwithContext "Hello" jok1
+      jexpect 0 [|"root(Hello)(1)", JError.Failure "Error"|]  <| jwithContext "Hello" jerr1
+
+    let test_jdebug () =
+      info "test_jdebug"
+      jexpect 1 [||]              <| jdebug "Hello" jok1
+      jexpect 0 [|jres1|]         <| jdebug "There" jerr1
+
     let run () =
-      test_jreturn    ()
-      test_jbind      ()
-      test_jarr       ()
-      test_jkleisli   ()
-      test_jpure      ()
-      test_japply     ()
-      test_jmap       ()
-      test_jorElse    ()
-      test_jkeepLeft  ()
-      test_jkeepRight ()
-      test_jpair      ()
+      test_jreturn      ()
+      test_jbind        ()
+      test_jarr         ()
+      test_jkleisli     ()
+      test_jpure        ()
+      test_japply       ()
+      test_jmap         ()
+      test_jorElse      ()
+      test_jkeepLeft    ()
+      test_jkeepRight   ()
+      test_jpair        ()
+      test_jtoOption    ()
+      test_jtoResult    ()
+      test_jfailure     ()
+      test_jfailuref    ()
+      test_jwarning     ()
+      test_jwarningf    ()
+      test_jwithContext ()
+      test_jdebug       ()
 
   let run () =
     Functionality.run ()

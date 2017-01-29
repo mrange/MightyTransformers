@@ -106,6 +106,11 @@
       <Project>{68c7233e-b616-4233-a3b8-6881f11dfb2f}</Project>
       <Private>True</Private>
     </ProjectReference>
+    <ProjectReference Include="..\MightyTransformers.Common\MightyTransformers.Common.fsproj">
+      <Name>MightyTransformers.Common</Name>
+      <Project>{3f26329f-4736-4632-8250-fe124d5092b6}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\MightyTransformers.Json\MightyTransformers.Json.fsproj">
       <Name>MightyTransformers.Json</Name>
       <Project>{25f7e4fe-92ff-4577-9a3f-bc3f1f08a53e}</Project>
@@ -117,7 +122,7 @@
       <Private>True</Private>
     </ProjectReference>
   </ItemGroup>
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
+  <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">
   </Target>
