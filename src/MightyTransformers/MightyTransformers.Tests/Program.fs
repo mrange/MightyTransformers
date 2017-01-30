@@ -304,6 +304,8 @@ module JsonTransformerTest =
       let jfloat1 = Json.JsonNumber  1.0
       let jhello  = Json.JsonString  "Hello"
       let jws     = Json.JsonString  ""
+      let jobj    = Json.JsonObject [|"hello", Json.JsonString "there"|]
+      let jarr    = Json.JsonArray  [|Json.JsonBoolean true|]
       let jerr e  = "root", e
 
       let test_jisNull () =
@@ -329,11 +331,19 @@ module JsonTransformerTest =
         jexpect "Hello" [||]                        jstring <| jhello
         jexpect ""      [|jerr JError.NotAString|]  jstring <| jnull
 
+      let test_jmember () =
+        info "test_jmember"
+        let j = jmember "hello" "" jstring
+        jexpect "there" [||]                        j <| jobj
+        jexpect ""      [|jerr JError.NotAnObject|] j <| jarr
+        jexpect ""      [|jerr JError.NotAnObject|] j <| jws
+
       let run () =
         test_jisNull  ()
         test_jbool    ()
         test_jfloat   ()
         test_jstring  ()
+        test_jmember  ()
 
     let run () =
       Primitives.run ()
