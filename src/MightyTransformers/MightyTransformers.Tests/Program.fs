@@ -161,7 +161,7 @@ module JsonTransformerTest =
 
     module Primitives =
       let jexpect jv jerrs j =
-        let a = jrun j Json.JsonNull
+        let a = jrun j JsonNull
         expect (jv, jerrs) a
 
       let test_jreturn () =
@@ -297,15 +297,15 @@ module JsonTransformerTest =
       let jexpect jv jerrs t json =
         expect (jv, jerrs) <| jrun t json
 
-      let jnull   = Json.JsonNull
-      let jfalse  = Json.JsonBoolean false
-      let jtrue   = Json.JsonBoolean true
-      let jfloat0 = Json.JsonNumber  0.0
-      let jfloat1 = Json.JsonNumber  1.0
-      let jhello  = Json.JsonString  "Hello"
-      let jws     = Json.JsonString  ""
-      let jobj    = Json.JsonObject [|"hello", Json.JsonString "there"|]
-      let jarr    = Json.JsonArray  [|Json.JsonBoolean true|]
+      let jnull   = JsonNull
+      let jfalse  = JsonBoolean false
+      let jtrue   = JsonBoolean true
+      let jfloat0 = JsonNumber  0.0
+      let jfloat1 = JsonNumber  1.0
+      let jhello  = JsonString  "Hello"
+      let jws     = JsonString  ""
+      let jobj    = JsonObject [|"hello", JsonString "there"|]
+      let jarr    = JsonArray  [|JsonBoolean true; JsonString "there"|]
       let jerr e  = "root", e
 
       let test_jisNull () =
@@ -331,12 +331,22 @@ module JsonTransformerTest =
         jexpect "Hello" [||]                        jstring <| jhello
         jexpect ""      [|jerr JError.NotAString|]  jstring <| jnull
 
+      let test_jindex () =
+        info "test_jindex"
+        let js = jindex 1 "" jstring
+        let jf = jindex -1 "" jstring
+        jexpect "there" [||]                        js <| jobj
+        jexpect ""      [|jerr JError.NotAnObject|] js <| jarr
+        jexpect ""      [|jerr JError.NotAnObject|] js <| jws
+
       let test_jmember () =
         info "test_jmember"
-        let j = jmember "hello" "" jstring
-        jexpect "there" [||]                        j <| jobj
-        jexpect ""      [|jerr JError.NotAnObject|] j <| jarr
-        jexpect ""      [|jerr JError.NotAnObject|] j <| jws
+        let js = jmember "hello" "" jstring
+        let jf = jmember "there" "" jstring
+        jexpect "there" [||]                                      js <| jobj
+        jexpect ""      [|jerr (JError.MemberNotFound "there")|]  jf <| jobj
+        jexpect ""      [|jerr JError.NotAnObject|]               js <| jarr
+        jexpect ""      [|jerr JError.NotAnObject|]               js <| jws
 
       let run () =
         test_jisNull  ()
@@ -344,6 +354,7 @@ module JsonTransformerTest =
         test_jfloat   ()
         test_jstring  ()
         test_jmember  ()
+        test_jindex   ()
 
     let run () =
       Primitives.run ()
