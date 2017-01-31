@@ -37,6 +37,11 @@ module Common =
       | e ->
         error "Failed to dispose object"
 
+  let expect e a =
+    if e <> a then
+      errorf "%A <> %A" e a
+
+
 module JsonTransformerTest =
   open Common
   open MightyTransformers.Json.JsonTransformer
@@ -131,8 +136,24 @@ module JsonTransformerTest =
 
     match parse true json with
     | ParseResult.Success json       ->
-      let jres = jrun jauthors json
-      infof "%A" jres
+      let e =
+        [|
+          Author.New
+            "Ludwig"
+            "Wittgenstein"
+            None
+            [|
+              Book "Tractatus Logico-Philosophicus"
+              Book "Philosophical Investigations"
+              Manuscript "Notes on Logic"
+            |]
+        |],
+        [|
+          "root.[1](Rene Descartes).works.[2].kind", JError.Failure "Expected kind 'book' but found 'notes'"
+          "root.[1](Rene Descartes).works.[2].kind", JError.Failure "Expected kind 'manuscript' but found 'notes'"
+        |]
+      let a = jrun jauthors json
+      expect e a
     | ParseResult.Failure (msg, pos) ->
       errorf "Failed to parse json: %s" msg
 
@@ -140,10 +161,6 @@ module JsonTransformerTest =
 
   module Functionality =
     open MightyTransformers.Common
-
-    let expect e a =
-      if e <> a then
-        errorf "%A <> %A" e a
 
     let jok  v    = jreturn  v
     let jok0      = jok 0
@@ -509,9 +526,25 @@ module XmlTransformerTest =
 
     let xdoc = XmlDocument ()
     xdoc.LoadXml xml
-    let xres = xrun xauthors [||] xdoc.DocumentElement
+    let e =
+      [|
+        Author.New
+          "Ludwig"
+          "Wittgenstein"
+          None
+          [|
+            Book "Tractatus Logico-Philosophicus"
+            Book "Philosophical Investigations"
+            Manuscript "Notes on Logic"
+          |]
+      |],
+      [|
+        "./author@1(Rene Descartes)/notes@2", XError.CheckFailed "Expected element named 'book'"
+        "./author@1(Rene Descartes)/notes@2", XError.CheckFailed "Expected element named 'manuscript'"
+      |]
+    let a = xrun xauthors [||] xdoc.DocumentElement
 
-    infof "%A" xres
+    expect e a
 
   let run () =
     testAuthorsTransform ()
