@@ -305,7 +305,7 @@ module JsonTransformerTest =
       let jhello  = JsonString  "Hello"
       let jws     = JsonString  ""
       let jobj    = JsonObject [|"hello", JsonString "there"|]
-      let jarr    = JsonArray  [|JsonBoolean true; JsonString "there"|]
+      let jarr    = JsonArray  [|JsonBoolean true; JsonString "hello"|]
       let jerr e  = "root", e
 
       let test_jisNull () =
@@ -331,30 +331,46 @@ module JsonTransformerTest =
         jexpect "Hello" [||]                        jstring <| jhello
         jexpect ""      [|jerr JError.NotAString|]  jstring <| jnull
 
+      let test_jvalue () =
+        info "test_jvalue"
+        jexpect jws     [||]  jvalue <| jws
+        jexpect jhello  [||]  jvalue <| jhello
+        jexpect jnull   [||]  jvalue <| jnull
+
       let test_jindex () =
         info "test_jindex"
-        let js = jindex 1 "" jstring
-        let jf = jindex -1 "" jstring
-        jexpect "there" [||]                        js <| jobj
-        jexpect ""      [|jerr JError.NotAnObject|] js <| jarr
-        jexpect ""      [|jerr JError.NotAnObject|] js <| jws
+        let j i = jindex i "" jstring
+        let j0  = j 0
+        let j1  = j 1
+        let j2  = j 2
+        let jm1 = j -1
+        jexpect ""      [|jerr (JError.IndexOutOfRange -1)|]  jm1<| jobj
+        jexpect ""      [|jerr (JError.IndexOutOfRange -1)|]  jm1<| jarr
+        jexpect "there" [||]                                  j0 <| jobj
+        jexpect ""      [|"root.[0]", JError.NotAString|]     j0 <| jarr
+        jexpect ""      [|jerr (JError.IndexOutOfRange 1)|]   j1 <| jobj
+        jexpect "hello" [||]                                  j1 <| jarr
+        jexpect ""      [|jerr (JError.IndexOutOfRange 2)|]   j2 <| jobj
+        jexpect ""      [|jerr (JError.IndexOutOfRange 2)|]   j2 <| jarr
+        jexpect ""      [|jerr JError.NotAnArrayOrObject|]    j0 <| jws
 
       let test_jmember () =
         info "test_jmember"
-        let js = jmember "hello" "" jstring
-        let jf = jmember "there" "" jstring
-        jexpect "there" [||]                                      js <| jobj
-        jexpect ""      [|jerr (JError.MemberNotFound "there")|]  jf <| jobj
-        jexpect ""      [|jerr JError.NotAnObject|]               js <| jarr
-        jexpect ""      [|jerr JError.NotAnObject|]               js <| jws
+        let jhello = jmember "hello" "" jstring
+        let jthere = jmember "there" "" jstring
+        jexpect "there" [||]                                      jhello <| jobj
+        jexpect ""      [|jerr (JError.MemberNotFound "there")|]  jthere <| jobj
+        jexpect ""      [|jerr JError.NotAnObject|]               jhello <| jarr
+        jexpect ""      [|jerr JError.NotAnObject|]               jhello <| jws
 
       let run () =
         test_jisNull  ()
         test_jbool    ()
         test_jfloat   ()
         test_jstring  ()
-        test_jmember  ()
+        test_jvalue   ()
         test_jindex   ()
+        test_jmember  ()
 
     let run () =
       Primitives.run ()

@@ -280,6 +280,10 @@ module JTransform =
       | JsonArray   _
       | JsonObject  _ -> result "" (JError.NotAString |> leaf p)
 
+  let jvalue : JTransform<Json> =
+    fun j p ->
+      good j
+
   let jasBool : JTransform<bool> =
     fun j p ->
       good <|
@@ -339,6 +343,28 @@ module JTransform =
       else
         result dv (name |> JError.MemberNotFound |> leaf p)
 
+  let inline jindex idx v (t : JTransform<'T>) : JTransform<'T> =
+    let t = adapt t
+    // TODO: Check IL to ensure no unnecessary objects created
+    let inline jindex idx dv t p m (ms : _ []) =
+      if idx >= 0 && idx < ms.Length then
+        let v = m ms.[idx]
+        let ip = (JContextElement.Index idx)::p
+        invoke t v ip
+      else
+        result dv (idx |> JError.IndexOutOfRange |> leaf p)
+    fun j p ->
+      match j with
+      | Json.JsonObject ms ->
+        jindex idx v t p snd ms
+      | Json.JsonArray vs ->
+        jindex idx v t p id vs
+      | _ ->
+        result v (JError.NotAnArrayOrObject |> leaf p)
+
+  let inline jindexz idx t =
+    jindex idx (zero ()) t
+
   let inline jmany (t : JTransform<'T>) : JTransform<'T []> =
     let t = adapt t
     fun j p ->
@@ -365,28 +391,6 @@ module JTransform =
 
   let inline jmemberz name t =
     jmember name (zero ()) t
-
-  let inline jindex idx v (t : JTransform<'T>) : JTransform<'T> =
-    let t = adapt t
-    // TODO: Check IL to ensure no unnecessary objects created
-    let inline jindex idx dv t p m (ms : _ []) =
-      if idx >= 0 && idx < ms.Length then
-        let v = m ms.[idx]
-        let ip = (JContextElement.Index idx)::p
-        invoke t v ip
-      else
-        result dv (idx |> JError.IndexOutOfRange |> leaf p)
-    fun j p ->
-      match j with
-      | Json.JsonObject ms ->
-        jindex idx v t p snd ms
-      | Json.JsonArray vs ->
-        jindex idx v t p id vs
-      | _ ->
-        result v (JError.NotAnArrayOrObject |> leaf p)
-
-  let inline jindexz idx t =
-    jindex idx (zero ()) t
 
   type JBuilder() =
     member inline j.Bind        (t, uf) = jbind t uf
