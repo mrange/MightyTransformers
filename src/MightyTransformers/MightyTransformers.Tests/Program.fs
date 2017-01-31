@@ -337,6 +337,45 @@ module JsonTransformerTest =
         jexpect jhello  [||]  jvalue <| jhello
         jexpect jnull   [||]  jvalue <| jnull
 
+      let test_jasBool () =
+        info "test_jasBool"
+        jexpect false [||]  jasBool <| JsonNull
+        jexpect false [||]  jasBool <| JsonBoolean false
+        jexpect true  [||]  jasBool <| JsonBoolean true
+        jexpect false [||]  jasBool <| JsonNumber 0.
+        jexpect true  [||]  jasBool <| JsonNumber 2.5
+        jexpect false [||]  jasBool <| JsonString ""
+        jexpect true  [||]  jasBool <| JsonString "xx"
+        jexpect false [||]  jasBool <| jarr
+        jexpect false [||]  jasBool <| jobj
+
+      let test_jasFloat () =
+        info "test_jasFloat"
+        let je = jerr JError.CanNotConvertToFloat
+        jexpect 0.   [||]    jasFloat <| JsonNull
+        jexpect 0.   [||]    jasFloat <| JsonBoolean false
+        jexpect 1.   [||]    jasFloat <| JsonBoolean true
+        jexpect 0.   [||]    jasFloat <| JsonNumber 0.
+        jexpect 2.5  [||]    jasFloat <| JsonNumber 2.5
+        jexpect 0.   [|je|]  jasFloat <| JsonString ""
+        jexpect 0.   [|je|]  jasFloat <| JsonString "xx"
+        jexpect 3.25 [||]    jasFloat <| JsonString "325E-2"
+        jexpect 0.   [|je|]  jasFloat <| jarr
+        jexpect 0.   [|je|]  jasFloat <| jobj
+
+      let test_jasString () =
+        info "test_jasString"
+        let je = jerr JError.CanNotConvertToString
+        jexpect ""        [||]    jasString <| JsonNull
+        jexpect "false"   [||]    jasString <| JsonBoolean false
+        jexpect "true"    [||]    jasString <| JsonBoolean true
+        jexpect "0"       [||]    jasString <| JsonNumber 0.
+        jexpect "2.5"     [||]    jasString <| JsonNumber 2.5
+        jexpect ""        [||]    jasString <| JsonString ""
+        jexpect "xx"      [||]    jasString <| JsonString "xx"
+        jexpect ""        [|je|]  jasString <| jarr
+        jexpect ""        [|je|]  jasString <| jobj
+
       let test_jindex () =
         info "test_jindex"
         let j i = jindex i "" jstring
@@ -354,6 +393,13 @@ module JsonTransformerTest =
         jexpect ""      [|jerr (JError.IndexOutOfRange 2)|]   j2 <| jarr
         jexpect ""      [|jerr JError.NotAnArrayOrObject|]    j0 <| jws
 
+      let test_jmany () =
+        info "test_jmany"
+        let j = jmany jvalue
+        jexpect [|JsonString "there"|]                    [||]                                j <| jobj
+        jexpect [|JsonBoolean true; JsonString "hello"|]  [||]                                j <| jarr
+        jexpect [||]                                      [|jerr JError.NotAnArrayOrObject|]  j <| jws
+
       let test_jmember () =
         info "test_jmember"
         let jhello = jmember "hello" "" jstring
@@ -364,13 +410,17 @@ module JsonTransformerTest =
         jexpect ""      [|jerr JError.NotAnObject|]               jhello <| jws
 
       let run () =
-        test_jisNull  ()
-        test_jbool    ()
-        test_jfloat   ()
-        test_jstring  ()
-        test_jvalue   ()
-        test_jindex   ()
-        test_jmember  ()
+        test_jisNull    ()
+        test_jbool      ()
+        test_jfloat     ()
+        test_jstring    ()
+        test_jvalue     ()
+        test_jasBool    ()
+        test_jasFloat   ()
+        test_jasString  ()
+        test_jindex     ()
+        test_jmany      ()
+        test_jmember    ()
 
     let run () =
       Primitives.run ()
