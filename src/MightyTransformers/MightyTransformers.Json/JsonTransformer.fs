@@ -16,8 +16,6 @@
 
 module MightyTransformers.Json.JsonTransformer
 
-// TODO: Internalize Loops and Details
-
 open System
 open System.Globalization
 open System.Text
@@ -62,58 +60,82 @@ type JResult<'T>(v : 'T, et : JErrorTree) =
 
 type JTransform<'T> = Json -> JContext -> JResult<'T>
 
-module Details =
-
-  module Loops =
-    let rec pathToString (sb : StringBuilder) p =
-      match p with
-      | []    -> sb.Append "root" |> ignore
-      | h::t  ->
-        pathToString sb t
-        match h with
-        | JContextElement.Member n  -> sb.Append (sprintf ".%s"   n)  |> ignore
-        | JContextElement.Index  i  -> sb.Append (sprintf ".[%d]" i)  |> ignore
-        | JContextElement.Named  n  -> sb.Append (sprintf "(%s)"  n)  |> ignore
-
-  let defaultSize     = 16
-  let inline adapt f  = OptimizedClosures.FSharpFunc<_, _, _>.Adapt f
-
-  let inline zero ()  = LanguagePrimitives.GenericZero<_>
-
-  let inline leaf p e = JErrorTree.Leaf (p, e)
-
-  let inline join l r =
-    match l, r with
-    | JErrorTree.Empty  , _                 -> r
-    | _                 , JErrorTree.Empty  -> l
-    | _                 , _                 -> JErrorTree.Fork (l, r)
-
-  let inline invoke (t : OptimizedClosures.FSharpFunc<Json,JContext,JResult<_>>) e p = t.Invoke (e, p)
-
-  let pathToString p =
-    let sb = System.Text.StringBuilder defaultSize
-    Loops.pathToString sb p
-    sb.ToString ()
-
-  module Loops2 =
-    let rec collapse (result : ResizeArray<_>) et =
-      match et with
-      | JErrorTree.Empty         -> ()
-      | JErrorTree.Leaf  (p, e)  -> result.Add (pathToString p, e)
-      | JErrorTree.Fork  (l, r)  -> collapse result l; collapse result r
-
-  let collapse (et : JErrorTree) =
-    let result = ResizeArray defaultSize
-    Loops2.collapse result et
-    result.ToArray ()
-
-  let inline result  v et = JResult (v, et)
-
-  let inline good    v    = result v JErrorTree.Empty
-
 module JTransform =
   open FSharp.Core.Printf
   open MightyTransformers.Common
+
+  module Details =
+
+    let defaultSize     = 16
+    let inline adapt f  = OptimizedClosures.FSharpFunc<_, _, _>.Adapt f
+
+    let inline zero ()  = LanguagePrimitives.GenericZero<_>
+
+    let inline leaf p e = JErrorTree.Leaf (p, e)
+
+    let inline join l r =
+      match l, r with
+      | JErrorTree.Empty  , _                 -> r
+      | _                 , JErrorTree.Empty  -> l
+      | _                 , _                 -> JErrorTree.Fork (l, r)
+
+    let inline invoke (t : OptimizedClosures.FSharpFunc<Json,JContext,JResult<_>>) e p = t.Invoke (e, p)
+
+    let pathToString p =
+      // Verified that call to private pathToString don't do "funny" stuff
+      let rec pathToString (sb : StringBuilder) p =
+        match p with
+        | []    -> sb.Append "root" |> ignore
+        | h::t  ->
+          pathToString sb t
+          match h with
+          | JContextElement.Member n  -> sb.Append (sprintf ".%s"   n)  |> ignore
+          | JContextElement.Index  i  -> sb.Append (sprintf ".[%d]" i)  |> ignore
+          | JContextElement.Named  n  -> sb.Append (sprintf "(%s)"  n)  |> ignore
+      let sb = System.Text.StringBuilder defaultSize
+      pathToString sb p
+      sb.ToString ()
+
+    let collapse (et : JErrorTree) =
+      // Verified that call to private collapse don't do "funny" stuff
+      let rec collapse (result : ResizeArray<_>) et =
+        match et with
+        | JErrorTree.Empty         -> ()
+        | JErrorTree.Leaf  (p, e)  -> result.Add (pathToString p, e)
+        | JErrorTree.Fork  (l, r)  -> collapse result l; collapse result r
+
+      let result = ResizeArray defaultSize
+      collapse result et
+      result.ToArray ()
+
+    let inline result  v et = JResult (v, et)
+
+    let inline good    v    = result v JErrorTree.Empty
+
+    module Loops =
+      let rec jmany t p (r : ResizeArray<_>) (ms : _ []) m et i =
+        if i < ms.Length then
+          let v = m ms.[i]
+          let ip = (JContextElement.Index i)::p
+          let tr = invoke t v ip
+          match tr.ErrorTree with
+          | JErrorTree.Empty -> r.Add tr.Value
+          | _     -> ()
+          jmany t p r ms m (join et tr.ErrorTree) (i + 1)
+        else
+          et
+
+      let rec jmember name dv t p (ms : _ []) i =
+        if i < ms.Length then
+          let k, v = ms.[i]
+          if k = name then
+            let ip = (JContextElement.Member name)::p
+            invoke t v ip
+          else
+            jmember name dv t p ms (i + 1)
+        else
+          result dv (name |> JError.MemberNotFound |> leaf p)
+
   open Details
 
   // Monad
@@ -335,33 +357,8 @@ module JTransform =
 
   // Queries
 
-  module Loops =
-    let rec jmany t p (r : ResizeArray<_>) (ms : _ []) m et i =
-      if i < ms.Length then
-        let v = m ms.[i]
-        let ip = (JContextElement.Index i)::p
-        let tr = invoke t v ip
-        match tr.ErrorTree with
-        | JErrorTree.Empty -> r.Add tr.Value
-        | _     -> ()
-        jmany t p r ms m (join et tr.ErrorTree) (i + 1)
-      else
-        et
-
-    let rec jmember name dv t p (ms : _ []) i =
-      if i < ms.Length then
-        let k, v = ms.[i]
-        if k = name then
-          let ip = (JContextElement.Member name)::p
-          invoke t v ip
-        else
-          jmember name dv t p ms (i + 1)
-      else
-        result dv (name |> JError.MemberNotFound |> leaf p)
-
   let inline jindex idx v (t : JTransform<'T>) : JTransform<'T> =
     let t = adapt t
-    // TODO: Check IL to ensure no unnecessary objects created
     let inline jindex idx dv t p m (ms : _ []) =
       if idx >= 0 && idx < ms.Length then
         let v = m ms.[idx]

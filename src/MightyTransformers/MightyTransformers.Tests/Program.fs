@@ -425,9 +425,6 @@ module JsonTransformerTest =
         jexpect ""      [|jres JError.NotAnObject|]               jhello <| jarr
         jexpect ""      [|jres JError.NotAnObject|]               jhello <| jws
 
-  let run () =
-    runAllTests ()
-
 module XmlTransformerTest =
   open Common
   open MightyTransformers.Xml.XmlTransformer
@@ -459,7 +456,7 @@ module XmlTransformerTest =
 
     static member Empty = Author.New "" "" None [||]
 
-  let testAuthorsTransform () =
+  let test_authorsTransform () =
     let xml = """<?xml version="1.0" encoding="utf-8" ?>
 <authors>
   <author name="Ludwig" surname="Wittgenstein">
@@ -527,9 +524,6 @@ module XmlTransformerTest =
 
     expect e a
 
-  let run () =
-    testAuthorsTransform ()
-
 open Common
 open System
 
@@ -538,8 +532,7 @@ let main argv =
   try
     Environment.CurrentDirectory <- AppDomain.CurrentDomain.BaseDirectory
 
-    JsonTransformerTest.run ()
-    XmlTransformerTest.run ()
+    runAllTests ()
 
     if Common.errorTraceCount > 0 then
       errorf "Detected %d error(s)" Common.errorTraceCount
