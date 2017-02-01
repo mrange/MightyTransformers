@@ -2,6 +2,7 @@ module Common =
   open FSharp.Core.Printf
 
   open System
+  open System.Reflection
   open System.Text
 
   let cline (cc : ConsoleColor) (prelude : string) (text : string) : unit =
@@ -41,6 +42,33 @@ module Common =
     if e <> a then
       errorf "%A <> %A" e a
 
+  let runAllTestsIn (dt : Type) =
+    let rec innerTypes (t : System.Type) =
+      Seq.append (Seq.singleton t) (t.GetNestedTypes () |> (Seq.collect innerTypes))
+    let filterMethod (mi : MethodInfo) =
+      mi.IsStatic
+      && mi.Name.StartsWith "test_" 
+      && (mi.GetParameters () |> Array.isEmpty)
+    let tms =
+      dt
+      |> innerTypes
+      |> Seq.collect  (fun t -> t.GetMethods ())
+      |> Seq.filter   filterMethod
+      |> Seq.toArray
+
+    for tm in tms do
+      infof "Running %s.%s" tm.DeclaringType.Name tm.Name
+      try
+        tm.Invoke (null, null) |> ignore
+      with 
+      | e ->
+        errorf "  %s.%s failed with: %s" tm.DeclaringType.Name tm.Name e.Message
+
+  let inline runAllTests () =
+    let mi  = MethodInfo.GetCurrentMethod ()
+    let dt  = mi.DeclaringType
+    runAllTestsIn dt
+
 module JsonTransformerTest =
   open Common
   open MightyTransformers.Json.JsonTransformer
@@ -71,7 +99,7 @@ module JsonTransformerTest =
 
     static member Empty = Author.New "" "" None [||]
 
-  let testAuthorsTransform () =
+  let test_authorsTransform () =
     let json = """
 [
     {
@@ -161,6 +189,8 @@ module JsonTransformerTest =
   module Functionality =
     open MightyTransformers.Common
 
+    open System.Reflection
+
     let jok  v    = jreturn  v
     let jok0      = jok 0
     let jok1      = jok 1
@@ -181,33 +211,27 @@ module JsonTransformerTest =
         expect (jv, jerrs) a
 
       let test_jreturn () =
-        info "test_jreturn"
         jexpect 1 [||] <| jreturn 1
 
       let test_jbind () =
-        info "test_jbind"
         jexpect 2 [||]              <| jbind jok1  jfok
         jexpect 0 [|jres1|]         <| jbind jok1  jferr
         jexpect 1 [|jres1|]         <| jbind jerr1 jfok
         jexpect 0 [|jres1; jres0|]  <| jbind jerr1 jferr
 
       let test_jarr () =
-        info "test_jarr"
         jexpect 2 [||] <| jfok 1
 
       let test_jkleisli () =
-        info "test_jkleisli"
         jexpect 3 [||]              <| jkleisli jfok  jfok  1
         jexpect 0 [|jres2|]         <| jkleisli jfok  jferr 1
         jexpect 1 [|jres1|]         <| jkleisli jferr jfok  1
         jexpect 0 [|jres1; jres0|]  <| jkleisli jferr jferr 1
 
       let test_jpure () =
-        info "test_jpure"
         jexpect 1 [||] <| jpure 1
 
       let test_japply () =
-        info "test_japply"
         let f = (+) 1
         jexpect 3 [||]              <| japply (jpure f      ) jok2
         jexpect 1 [|jres2|]         <| japply (jpure f      ) jerr2
@@ -215,97 +239,63 @@ module JsonTransformerTest =
         jexpect 0 [|jres1; jres2|]  <| japply (jerr  id "1" ) jerr2
 
       let test_jmap () =
-        info "test_jmap"
         let f = (+) 1
         jexpect 2 [||]              <| jmap f jok1
         jexpect 1 [|jres1|]         <| jmap f jerr1
 
       let test_jorElse () =
-        info "test_jorElse"
         jexpect 1 [||]              <| jorElse jok1   jok2
         jexpect 1 [||]              <| jorElse jok1   jerr2
         jexpect 2 [||]              <| jorElse jerr1  jok2
         jexpect 0 [|jres1; jres2|]  <| jorElse jerr1  jerr2
 
       let test_jkeepLeft () =
-        info "test_jkeepLeft"
         jexpect 1 [||]              <| jkeepLeft jok1  jok2
         jexpect 1 [|jres2|]         <| jkeepLeft jok1  jerr2
         jexpect 0 [|jres1|]         <| jkeepLeft jerr1 jok2
         jexpect 0 [|jres1; jres2|]  <| jkeepLeft jerr1 jerr2
 
       let test_jkeepRight () =
-        info "test_jkeepRight"
         jexpect 2 [||]              <| jkeepRight jok1  jok2
         jexpect 0 [|jres2|]         <| jkeepRight jok1  jerr2
         jexpect 2 [|jres1|]         <| jkeepRight jerr1 jok2
         jexpect 0 [|jres1; jres2|]  <| jkeepRight jerr1 jerr2
 
       let test_jpair () =
-        info "test_jpair"
         jexpect (1,2) [||]              <| jpair jok1  jok2
         jexpect (1,0) [|jres2|]         <| jpair jok1  jerr2
         jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
         jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
 
       let test_jtoOption () =
-        info "test_jtoOption"
         jexpect (Some 1)  [||]          <| jtoOption jok1
         jexpect None      [||]          <| jtoOption jerr1
 
       let test_jtoResult () =
-        info "test_jtoResult"
         jexpect (Good 1)        [||]    <| jtoResult jok1
         jexpect (Bad [|jres1|]) [||]    <| jtoResult jerr1
 
       let test_jfailure () =
-        info "test_jfailure"
         jexpect 0 [|"root", JError.Failure "Hello"|] <| jfailure 0 "Hello"
         jexpect 0 [|"root", JError.Failure "There"|] <| jfailure 0 "There"
 
       let test_jfailuref () =
-        info "test_jfailuref"
         jexpect 0 [|"root", JError.Failure "Hello there"|] <| jfailuref 0 "Hello %s" "there"
 
       let test_jwarning () =
-        info "test_jwarning"
         jexpect 0 [|"root", JError.Warning "Hello"|] <| jwarning 0 "Hello"
         jexpect 0 [|"root", JError.Warning "There"|] <| jwarning 0 "There"
 
       let test_jwarningf () =
-        info "test_jwarningf"
         jexpect 0 [|"root", JError.Warning "Hello there"|] <| jwarningf 0 "Hello %s" "there"
 
       let test_jwithContext () =
-        info "test_jwithContext"
         jexpect 1 [||]                                          <| jwithContext "Hello" jok1
         jexpect 0 [|"root(Hello)(1)", JError.Failure "Error"|]  <| jwithContext "Hello" jerr1
 
       let test_jdebug () =
-        info "test_jdebug"
         jexpect 1 [||]              <| jdebug "Hello" jok1
         jexpect 0 [|jres1|]         <| jdebug "There" jerr1
-
-      let run () =
-        test_jreturn      ()
-        test_jbind        ()
-        test_jarr         ()
-        test_jkleisli     ()
-        test_jpure        ()
-        test_japply       ()
-        test_jmap         ()
-        test_jorElse      ()
-        test_jkeepLeft    ()
-        test_jkeepRight   ()
-        test_jpair        ()
-        test_jtoOption    ()
-        test_jtoResult    ()
-        test_jfailure     ()
-        test_jfailuref    ()
-        test_jwarning     ()
-        test_jwarningf    ()
-        test_jwithContext ()
-        test_jdebug       ()
 
     // TODO: test_jrun
 
@@ -325,36 +315,30 @@ module JsonTransformerTest =
       let jerr e  = "root", e
 
       let test_jisNull () =
-        info "test_jisNull"
         jexpect true  [||] jisNull <| jnull
         jexpect false [||] jisNull <| jfalse
 
       let test_jbool () =
-        info "test_jbool"
         jexpect false [||]                      jbool <| jfalse
         jexpect true  [||]                      jbool <| jtrue
         jexpect false [|jerr JError.NotABool|]  jbool <| jnull
 
       let test_jfloat () =
-        info "test_jfloat"
         jexpect 0.  [||]                      jfloat <| jfloat0
         jexpect 1.  [||]                      jfloat <| jfloat1
         jexpect 0.  [|jerr JError.NotAFloat|] jfloat <| jnull
 
       let test_jstring () =
-        info "test_jstring"
         jexpect ""      [||]                        jstring <| jws
         jexpect "Hello" [||]                        jstring <| jhello
         jexpect ""      [|jerr JError.NotAString|]  jstring <| jnull
 
       let test_jvalue () =
-        info "test_jvalue"
         jexpect jws     [||]  jvalue <| jws
         jexpect jhello  [||]  jvalue <| jhello
         jexpect jnull   [||]  jvalue <| jnull
 
       let test_jasBool () =
-        info "test_jasBool"
         jexpect false [||]  jasBool <| JsonNull
         jexpect false [||]  jasBool <| JsonBoolean false
         jexpect true  [||]  jasBool <| JsonBoolean true
@@ -366,7 +350,6 @@ module JsonTransformerTest =
         jexpect false [||]  jasBool <| jobj
 
       let test_jasFloat () =
-        info "test_jasFloat"
         let je = jerr JError.CanNotConvertToFloat
         jexpect 0.   [||]    jasFloat <| JsonNull
         jexpect 0.   [||]    jasFloat <| JsonBoolean false
@@ -380,7 +363,6 @@ module JsonTransformerTest =
         jexpect 0.   [|je|]  jasFloat <| jobj
 
       let test_jasString () =
-        info "test_jasString"
         let je = jerr JError.CanNotConvertToString
         jexpect ""        [||]    jasString <| JsonNull
         jexpect "false"   [||]    jasString <| JsonBoolean false
@@ -393,7 +375,6 @@ module JsonTransformerTest =
         jexpect ""        [|je|]  jasString <| jobj
 
       let test_jindex () =
-        info "test_jindex"
         let j i = jindex i "" jstring
         let j0  = j 0
         let j1  = j 1
@@ -410,14 +391,12 @@ module JsonTransformerTest =
         jexpect ""      [|jerr JError.NotAnArrayOrObject|]    j0 <| jws
 
       let test_jmany () =
-        info "test_jmany"
         let j = jmany jvalue
         jexpect [|JsonString "there"|]                    [||]                                j <| jobj
         jexpect [|JsonBoolean true; JsonString "hello"|]  [||]                                j <| jarr
         jexpect [||]                                      [|jerr JError.NotAnArrayOrObject|]  j <| jws
 
       let test_jmember () =
-        info "test_jmember"
         let jhello = jmember "hello" "" jstring
         let jthere = jmember "there" "" jstring
         jexpect "there" [||]                                      jhello <| jobj
@@ -425,41 +404,8 @@ module JsonTransformerTest =
         jexpect ""      [|jerr JError.NotAnObject|]               jhello <| jarr
         jexpect ""      [|jerr JError.NotAnObject|]               jhello <| jws
 
-      let run () =
-        test_jisNull    ()
-        test_jbool      ()
-        test_jfloat     ()
-        test_jstring    ()
-        test_jvalue     ()
-        test_jasBool    ()
-        test_jasFloat   ()
-        test_jasString  ()
-        test_jindex     ()
-        test_jmany      ()
-        test_jmember    ()
-
-    let run () =
-      let mi  = System.Reflection.MethodInfo.GetCurrentMethod ()
-      let dt  = mi.DeclaringType
-      let rec innerTypes (t : System.Type) =
-        t.GetNestedTypes ()
-        |> Seq.collect innerTypes
-      let its = innerTypes dt
-      let ts  = Seq.append (Seq.singleton dt) its |> Seq.toArray
-      let tms =
-        ts
-        |> Seq.collect  (fun t -> t.GetMethods ())
-//        |> Seq.filter   (fun m -> m.Name.StartsWith "test_" && (m.GetParameters () |> Array.isEmpty))
-        |> Seq.toArray
-
-      infof "%A" ts
-      infof "%A" tms
-      Primitives.run ()
-      Extractors.run ()
-
   let run () =
-    Functionality.run ()
-    testAuthorsTransform ()
+    runAllTests ()
 
 module XmlTransformerTest =
   open Common
