@@ -41,7 +41,6 @@ module Common =
     if e <> a then
       errorf "%A <> %A" e a
 
-
 module JsonTransformerTest =
   open Common
   open MightyTransformers.Json.JsonTransformer
@@ -440,6 +439,21 @@ module JsonTransformerTest =
         test_jmember    ()
 
     let run () =
+      let mi  = System.Reflection.MethodInfo.GetCurrentMethod ()
+      let dt  = mi.DeclaringType
+      let rec innerTypes (t : System.Type) =
+        t.GetNestedTypes ()
+        |> Seq.collect innerTypes
+      let its = innerTypes dt
+      let ts  = Seq.append (Seq.singleton dt) its |> Seq.toArray
+      let tms =
+        ts
+        |> Seq.collect  (fun t -> t.GetMethods ())
+//        |> Seq.filter   (fun m -> m.Name.StartsWith "test_" && (m.GetParameters () |> Array.isEmpty))
+        |> Seq.toArray
+
+      infof "%A" ts
+      infof "%A" tms
       Primitives.run ()
       Extractors.run ()
 
