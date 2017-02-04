@@ -68,7 +68,7 @@ type JErrorItem =
 
 [<NoEquality>]
 [<NoComparison>]
-type JTransform<'T> (f : OptimizedClosures.FSharpFunc<Json, JContext, JResult<'T>>) = 
+type JTransform<'T> (f : OptimizedClosures.FSharpFunc<Json, JContext, JResult<'T>>) =
   struct
     member x.Invoke (j, p) = f.Invoke (j, p)
   end
@@ -112,7 +112,7 @@ module JTransform =
       // Verified that call to private pathToString don't do "funny" stuff
       let rec pathToString (sb : StringBuilder) p =
         match p with
-        | []    -> sb.Append "root" |> ignore
+        | []    -> sb.Append "json" |> ignore
         | h::t  ->
           pathToString sb t
           match h with
@@ -304,9 +304,14 @@ module JTransform =
         printfn "FAILURE %s: %A(%A)" name tr.Value tr.ErrorTree
       tr
 
-  let inline jrun (t : JTransform<'T>) (root : Json) : 'T*JErrorItem [] =
+  let jrun (t : JTransform<'T>) (root : Json) : 'T*JErrorItem [] =
     let tr = invoke t root []
     tr.Value, collapse tr.ErrorTree
+
+  let jrunOnString fullErrorInfo t v s : 'T*JErrorItem [] =
+    match parse fullErrorInfo s with
+    | ParseResult.Success json        -> jrun t json
+    | ParseResult.Failure (msg, pos)  -> v, [|JErrorItem.New false "" (JError.Message msg)|]
 
   // Extractors
 

@@ -203,8 +203,8 @@ module JsonTransformerTest =
             |]
         |],
         [|
-          jwarn "root.[1](Rene Descartes).works.[2].kind" <| JError.Message "Expected kind 'book' but found 'notes'"
-          jwarn "root.[1](Rene Descartes).works.[2].kind" <| JError.Message "Expected kind 'manuscript' but found 'notes'"
+          jwarn "json.[1](Rene Descartes).works.[2].kind" <| JError.Message "Expected kind 'book' but found 'notes'"
+          jwarn "json.[1](Rene Descartes).works.[2].kind" <| JError.Message "Expected kind 'manuscript' but found 'notes'"
         |]
       let a = jrun jauthors json
       expect e a
@@ -228,9 +228,9 @@ module JsonTransformerTest =
     let jerr2     = jerr 0 "2"
     let jfok      = jarr ((+) 1)
     let jferr     = fun v -> jerr 0 (v.ToString ())
-    let jres0     = jfail "root(0)" <| JError.Message "Error"
-    let jres1     = jfail "root(1)" <| JError.Message "Error"
-    let jres2     = jfail "root(2)" <| JError.Message "Error"
+    let jres0     = jfail "json(0)" <| JError.Message "Error"
+    let jres1     = jfail "json(1)" <| JError.Message "Error"
+    let jres2     = jfail "json(2)" <| JError.Message "Error"
 
     module Primitives =
       let jexpect jv jerrs j =
@@ -298,7 +298,7 @@ module JsonTransformerTest =
         // TODO: Suppress interacts with many combinators
         //  Test combinators like jmany, jbind,
         //  alternative all combinators should have a suppression test in them
-        let je = jwarn "root(1)" <| JError.Message "Error"
+        let je = jwarn "json(1)" <| JError.Message "Error"
         jexpect 1  [||]                 <| jsuppress jok1
         jexpect 0  [|je|]               <| jsuppress jerr1
 
@@ -318,25 +318,25 @@ module JsonTransformerTest =
         jexpect (Choice2Of2 [|jres1|])  [||]  <| j jerr1
 
       let test_jfailure () =
-        let jres s = jfail "root" <| JError.Message s
+        let jres s = jfail "json" <| JError.Message s
         jexpect 0 [|jres "Hello"|]      <| jfailure 0 "Hello"
         jexpect 0 [|jres "There"|]      <| jfailure 0 "There"
 
       let test_jfailuref () =
-        let jres s = jfail "root" <| JError.Message s
+        let jres s = jfail "json" <| JError.Message s
         jexpect 0 [|jres "Hello there"|]<| jfailuref 0 "Hello %s" "there"
 
       let test_jwarning () =
-        let jres s = jwarn "root" <| JError.Message s
+        let jres s = jwarn "json" <| JError.Message s
         jexpect 0 [|jres "Hello"|]      <| jwarning 0 "Hello"
         jexpect 0 [|jres "There"|]      <| jwarning 0 "There"
 
       let test_jwarningf () =
-        let jres s = jwarn "root" <| JError.Message s
+        let jres s = jwarn "json" <| JError.Message s
         jexpect 0 [|jres "Hello there"|]<| jwarningf 0 "Hello %s" "there"
 
       let test_jwithContext () =
-        let jres s = jfail "root(Hello)(1)" <| JError.Message s
+        let jres s = jfail "json(Hello)(1)" <| JError.Message s
         jexpect 1 [||]                  <| jwithContext "Hello" jok1
         jexpect 0 [|jres "Error"|]      <| jwithContext "Hello" jerr1
 
@@ -359,7 +359,7 @@ module JsonTransformerTest =
       let jws     = JsonString  ""
       let jobj    = JsonObject [|"hello", JsonString "there"|]
       let jarr    = JsonArray  [|JsonBoolean true; JsonString "hello"|]
-      let jres e  = jfail "root" e
+      let jres e  = jfail "json" e
 
       let test_jisNull () =
         jexpect true  [||]                    jisNull <| jnull
@@ -427,7 +427,7 @@ module JsonTransformerTest =
         let j1  = j 1
         let j2  = j 2
         let jm1 = j -1
-        let je  = JErrorItem.New false "root.[0]" JError.NotAString
+        let je  = JErrorItem.New false "json.[0]" JError.NotAString
         jexpect ""      [|jres (JError.IndexOutOfRange -1)|]  jm1<| jobj
         jexpect ""      [|jres (JError.IndexOutOfRange -1)|]  jm1<| jarr
         jexpect "there" [||]                                  j0 <| jobj
@@ -562,6 +562,143 @@ module XmlTransformerTest =
 
     expect e a
 
+module JsonSamples =
+  open Common
+  open MightyTransformers.Json.JsonTransformer
+  open MightyTransformers.Json.JsonTransformer.JTransform
+  open MightyTransformers.Json.JsonTransformer.JTransform.Infixes
+
+  open MiniJson.JsonModule
+
+  let sample1 () =
+    let t : JTransform<float []>   = jmany jfloat
+    let r : float []*JErrorItem [] = jrunOnString true t [||] """[1,2,3,4]"""
+    printfn "sample1: %A" r
+
+  let sample2 () =
+    let t : JTransform<float []>   = jmany jfloat
+    let r : float []*JErrorItem [] = jrunOnString true t [||] """[1,"2",3]"""
+    printfn "sample2: %A" r
+
+  let sample3 () =
+    let t : JTransform<float []>   = jmany jasFloat
+    let r : float []*JErrorItem [] = jrunOnString true t [||] """[1,"2",3]"""
+    printfn "sample3: %A" r
+
+  type Customer =
+    {
+      FirstName   : string
+      LastName    : string
+      YearOfBirth : int
+    }
+
+    static member New firstName lastName yearOfBirth : Customer =
+      {
+        FirstName   = firstName
+        LastName    = lastName
+        YearOfBirth = yearOfBirth
+      }
+
+    static member Empty = Customer.New "" "" 0
+
+  let sample4 () =
+    let customer = """
+{
+    "name"    : "Rene"
+  , "surname" : "Descartes"
+  , "birth"   : 1596
+}
+"""
+    let jcustomer =
+      jtransform {
+        let! name     = jmember   "name"    ""  jstring
+        let! surname  = jmember   "surname" ""  jstring
+        let! birth    = jmemberz  "birth"       jfloat  |>> int
+        return Customer.New name surname birth
+      }
+    let r = jrunOnString true jcustomer Customer.Empty customer
+    printfn "sample4: %A" r
+
+  let sample5 () =
+    let customers = """
+[
+    {
+        "name"    : "Ludwig"
+      , "surname" : "Wittgenstein"
+    }
+  , {
+        "name"    : "Rene"
+      , "surname" : "Descartes"
+      , "birth"   : 1596
+    }
+]
+"""
+    let jcustomer =
+      jtransform {
+        let! name     = jmember   "name"    ""  jstring
+        let! surname  = jmember   "surname" ""  jstring
+        let! birth    = jmemberz  "birth"       jfloat  |>> int
+        return Customer.New name surname birth
+      }
+    let jcustomers = jmany jcustomer
+    let r = jrunOnString true jcustomers [||] customers
+    printfn "sample5: %A" r
+
+  type Work =
+    | Book        of string
+    | Manuscript  of string
+
+  type Author =
+    {
+      FirstName   : string
+      LastName    : string
+      YearOfBirth : int option
+      Works       : Work []
+    }
+
+    static member New firstName lastName yearOfBirth works : Author =
+      {
+        FirstName   = firstName
+        LastName    = lastName
+        YearOfBirth = yearOfBirth
+        Works       = works
+      }
+
+    static member Empty = Author.New "" "" None [||]
+
+  let sample6 () =
+    let authors = """
+[
+    {
+        "name"    : "Ludwig"
+      , "surname" : "Wittgenstein"
+    }
+  , {
+        "name"    : "Rene"
+      , "surname" : "Descartes"
+      , "birth"   : 1596
+    }
+]
+"""
+    let jauthor =
+      jtransform {
+        let! name     = jmember   "name"    ""  jstring
+        let! surname  = jmember   "surname" ""  jstring
+        let! birth    = jmemberz  "birth"       jfloat  |>> int |> jtoOption
+        return Author.New name surname birth [||]
+      }
+    let jauthors = jmany jauthor
+    let r = jrunOnString true jauthors [||] authors
+    printfn "sample6: %A" r
+
+  let run () =
+    sample1 ()
+    sample2 ()
+    sample3 ()
+    sample4 ()
+    sample5 ()
+    sample6 ()
+
 open Common
 open System
 
@@ -570,7 +707,8 @@ let main argv =
   try
     Environment.CurrentDirectory <- AppDomain.CurrentDomain.BaseDirectory
 
-    runAllTests ()
+    runAllTests     ()
+    JsonSamples.run ()
 
     if Common.errorTraceCount > 0 then
       errorf "Detected %d error(s)" Common.errorTraceCount

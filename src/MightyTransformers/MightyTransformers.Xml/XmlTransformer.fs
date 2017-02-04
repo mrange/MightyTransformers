@@ -84,7 +84,7 @@ type XErrorItem =
 
 [<NoEquality>]
 [<NoComparison>]
-type XTransform<'T> (f : OptimizedClosures.FSharpFunc<XmlElement, XContext, XResult<'T>>) = 
+type XTransform<'T> (f : OptimizedClosures.FSharpFunc<XmlElement, XContext, XResult<'T>>) =
   struct
     member x.Invoke (j, p) = f.Invoke (j, p)
   end
