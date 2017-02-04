@@ -542,10 +542,12 @@ module XTransform =
       | _ ->
         result v (XError.NoParentElement |> leaf p)
 
-  type XBuilder() =
+  type XBuilder () =
     member inline x.Bind        (t, uf) = xbind t uf
+    member inline j.Combine     (t, u)  = xkeepRight t u
     member inline x.Return      v       = xreturn v
     member inline x.ReturnFrom  t       = t : XTransform<'T>
+    member inline j.Zero        ()      = xreturn (zero ())
 
   module Infixes =
     let inline (>>=)  t uf  = xbind      t uf

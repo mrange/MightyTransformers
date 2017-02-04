@@ -436,10 +436,12 @@ module JTransform =
   let inline jmemberz name t =
     jmember name (zero ()) t
 
-  type JBuilder() =
+  type JBuilder () =
     member inline j.Bind        (t, uf) = jbind t uf
+    member inline j.Combine     (t, u)  = jkeepRight t u
     member inline j.Return      v       = jreturn v
     member inline j.ReturnFrom  t       = t : JTransform<'T>
+    member inline j.Zero        ()      = jreturn (zero ())
 
   module Infixes =
     let inline (>>=)  t uf  = jbind      t uf
