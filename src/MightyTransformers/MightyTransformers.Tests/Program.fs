@@ -765,8 +765,8 @@ module JsonSamples =
           return Author.New name surname birth works
         } |> jwithContext (sprintf "%s %s" name surname)
       jtransform {
-        let! name     = jmember   "name"    ""    jstring
-        let! surname  = jmember   "surname" ""    jstring
+        let! name     = jstr "name"
+        let! surname  = jstr "surname"
         return! inner name surname
       }
     let jauthors = jmany jauthor

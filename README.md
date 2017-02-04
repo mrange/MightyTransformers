@@ -312,8 +312,8 @@ Completing the transformer is easy:
 ```fsharp
 let jauthor =
   jtransform {
-    let! name     = jmember   "name"    ""    jstring
-    let! surname  = jmember   "surname" ""    jstring
+    let! name     = jstr "name"
+    let! surname  = jstr "surname"
     let! birth    = jmemberz  "birth"         jfloat  |>> int |> jtoOption
     let! works    = jmember   "works"   [||]  jworks
     return Author.New name surname birth works
@@ -347,8 +347,8 @@ let jauthor =
       return Author.New name surname birth works
     } |> jwithContext (sprintf "%s %s" name surname)
   jtransform {
-    let! name     = jmember   "name"    ""    jstring
-    let! surname  = jmember   "surname" ""    jstring
+    let! name     = jstr "name"
+    let! surname  = jstr "surname"
     return! inner name surname
   }
 ```
