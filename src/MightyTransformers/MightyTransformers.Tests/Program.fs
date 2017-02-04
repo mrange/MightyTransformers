@@ -454,6 +454,9 @@ module XmlTransformerTest =
   open MightyTransformers.Xml.XmlTransformer.XTransform.Infixes
   open System.Xml
 
+  let xwarn p e = XErrorItem.New true   p e
+  let xfail p e = XErrorItem.New false  p e
+
   type Work =
     | Book        of string
     | Manuscript  of string
@@ -506,7 +509,7 @@ module XmlTransformerTest =
     let xbook         = xcheck (xqhasName xnbook)       >>. (xattributez xntitle |>> Book)
     let xmanuscript   = xcheck (xqhasName xnmanuscript) >>. (xattributez xntitle |>> Manuscript)
     let xwork         = xbook <|> xmanuscript
-    let xworks        = (xelements xqtrue xwork)
+    let xworks        = (xelements xqtrue xwork) |> xsuppress
     let xauthor       =
       xpure Author.New
       <*> (xattributez xnname)
@@ -535,10 +538,18 @@ module XmlTransformerTest =
             Book "Philosophical Investigations"
             Manuscript "Notes on Logic"
           |]
+        Author.New
+          "Rene"
+          "Descartes"
+          (Some 1596)
+          [|
+            Book "Discourse on Method and the Meditations"
+            Book "Meditations and Other Metaphysical Writings"
+          |]
       |],
       [|
-        "./author@1(Rene Descartes)/notes@2", XError.CheckFailed "Expected element named 'book'"
-        "./author@1(Rene Descartes)/notes@2", XError.CheckFailed "Expected element named 'manuscript'"
+        xwarn "./author'1(Rene Descartes)/notes'2" <| XError.CheckFailed "Expected element named 'book'"
+        xwarn "./author'1(Rene Descartes)/notes'2" <| XError.CheckFailed "Expected element named 'manuscript'"
       |]
     let a = xrun xauthors [||] xdoc.DocumentElement
 
