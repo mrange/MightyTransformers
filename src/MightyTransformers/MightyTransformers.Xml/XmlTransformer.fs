@@ -82,7 +82,13 @@ type XErrorItem =
   }
   static member New i p e : XErrorItem = { IsSuppressed = i; Path = p; Error = e }
 
-type XTransform<'T> = XmlElement -> XContext -> XResult<'T>
+[<NoEquality>]
+[<NoComparison>]
+type XTransform<'T> (f : OptimizedClosures.FSharpFunc<XmlElement, XContext, XResult<'T>>) = 
+  struct
+    member x.Invoke (j, p) = f.Invoke (j, p)
+  end
+
 
 module XElementQueries =
 
@@ -169,7 +175,8 @@ module XTransform =
     open XElementQueries.Details
 
     let defaultSize     = 16
-    let inline adapt f  = OptimizedClosures.FSharpFunc<_, _, _>.Adapt f
+
+    let inline xtrans f = XTransform(OptimizedClosures.FSharpFunc<_, _, _>.Adapt f)
 
     let inline zero ()  = LanguagePrimitives.GenericZero<_>
 
@@ -195,7 +202,7 @@ module XTransform =
       | XErrorTree.Suppress l , XErrorTree.Suppress r -> XErrorTree.Fork (l, r) |> XErrorTree.Suppress
       | _                     , _                     -> XErrorTree.Fork (l, r)
 
-    let inline invoke (t : OptimizedClosures.FSharpFunc<XmlElement,XContext,XResult<_>>) e p = t.Invoke (e, p)
+    let inline invoke (t : XTransform<'T>) e p = t.Invoke (e, p)
 
     let inline elementName (e : XmlElement) =
       XNames.xnqualified e.LocalName e.Prefix
@@ -303,15 +310,13 @@ module XTransform =
   // Monad
 
   let inline xreturn v : XTransform<'T> =
-    fun e p ->
+    xtrans <|fun e p ->
       good v
 
   let inline xbind (t : XTransform<'T>) (uf : 'T -> XTransform<'U>) : XTransform<'U> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let tr  = invoke t e p
       let u   = uf tr.Value
-      let u   = adapt u
       let ur  = invoke u e p
       result ur.Value (join tr.ErrorTree ur.ErrorTree)
 
@@ -327,9 +332,7 @@ module XTransform =
   let inline xpure v = xreturn v
 
   let inline xapply (t : XTransform<'U -> 'V>) (u : XTransform<'U>) : XTransform<'V> =
-    let t = adapt t
-    let u = adapt u
-    fun e p ->
+    xtrans <| fun e p ->
       let tr  = invoke t e p
       let ur  = invoke u e p
       result (tr.Value ur.Value) (join tr.ErrorTree ur.ErrorTree)
@@ -337,17 +340,14 @@ module XTransform =
   // Functor
 
   let inline xmap m (t : XTransform<'T>) : XTransform<'U> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let tr = invoke t e p
       result (m tr.Value) tr.ErrorTree
 
   // Combinators
 
   let inline xorElse (l : XTransform<'T>) (r : XTransform<'T>) : XTransform<'T> =
-    let l = adapt l
-    let r = adapt r
-    fun e p ->
+    xtrans <| fun e p ->
       let lr = invoke l e p
       if isGood lr.ErrorTree then
         lr
@@ -359,32 +359,25 @@ module XTransform =
           result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline xkeepLeft (l : XTransform<'T>) (r : XTransform<_>) : XTransform<'T> =
-    let l = adapt l
-    let r = adapt r
-    fun e p ->
+    xtrans <| fun e p ->
       let lr = invoke l e p
       let rr = invoke r e p
       result lr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline xkeepRight (l : XTransform<_>) (r : XTransform<'T>) : XTransform<'T> =
-    let l = adapt l
-    let r = adapt r
-    fun e p ->
+    xtrans <| fun e p ->
       let lr = invoke l e p
       let rr = invoke r e p
       result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline xpair (l : XTransform<'T>) (r : XTransform<'U>) : XTransform<'T*'U> =
-    let l = adapt l
-    let r = adapt r
-    fun e p ->
+    xtrans <| fun e p ->
       let lr = invoke l e p
       let rr = invoke r e p
       result (lr.Value, rr.Value) (join lr.ErrorTree rr.ErrorTree)
 
   let inline xsuppress (t : XTransform<'T>) : XTransform<'T> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let tr = invoke t e p
       let e  =
         if isGood tr.ErrorTree then
@@ -394,8 +387,7 @@ module XTransform =
       result tr.Value e
 
   let inline xtoOption (t : XTransform<'T>) : XTransform<'T option> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let tr = invoke t e p
       if isGood tr.ErrorTree then
         good (Some tr.Value)
@@ -404,8 +396,7 @@ module XTransform =
 
 #if FSHARP_41
   let inline xtoResult (t : XTransform<'T>) : XTransform<Result<'T, XErrorItem []>> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let tr = invoke t e p
       if isGood tr.ErrorTree then
         good (Good tr.Value)
@@ -414,24 +405,25 @@ module XTransform =
 #endif
 
   let inline xunpack (ok : 'T -> XTransform<'U>) (bad : XErrorItem [] -> XTransform<'U>) (t : XTransform<'T>) =
-    let t = adapt t
-    fun j p ->
-      let tr = invoke t j p
+    xtrans <| fun e p ->
+      let tr = invoke t e p
       if isGood tr.ErrorTree then
-        ok tr.Value
+        let tok = ok tr.Value
+        invoke tok e p
       else
-        bad (collapse tr.ErrorTree)
+        let tbad = bad (collapse tr.ErrorTree)
+        invoke tbad e p
 
   // Failures
 
   let inline xfailure v msg : XTransform<'T> =
-    fun e p ->
+    xtrans <| fun e p ->
       result v (msg |> XError.Message |> leaf p)
 
   let inline xfailuref v fmt = kprintf (xfailure v) fmt
 
   let inline xwarning v msg : XTransform<'T> =
-    fun e p ->
+    xtrans <| fun e p ->
       result v (msg |> XError.Message |> leaf p |> supp)
 
   let inline xwarningf v fmt = kprintf (xwarning v) fmt
@@ -439,14 +431,12 @@ module XTransform =
   // Misc
 
   let inline xwithContext name (t : XTransform<'T>) : XTransform<'T> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let np = (XContextElement.Named name)::p
       invoke t e np
 
   let inline xdebug name (t : XTransform<'T>) : XTransform<'T> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       // let attrs = e.Attributes |> FsLinq.map (fun a -> a.Name, a.Value) |> FsLinq.toArray
       printfn "BEFORE  %s: %A - %A" name e.Name p
       let tr = invoke t e p
@@ -458,7 +448,6 @@ module XTransform =
 
   let inline xrun (t : XTransform<'T>) v (root : XmlElement) : 'T*XErrorItem [] =
     if root <> null then
-      let t = adapt t
       let tr = invoke t root []
       tr.Value, collapse tr.ErrorTree
     else
@@ -472,7 +461,7 @@ module XTransform =
   open XElementQueries.Details
 
   let inline xattribute name v : XTransform<string> =
-    fun e p ->
+    xtrans <| fun e p ->
       match tryFindAttribute name e with
       | null  -> result v (name |> XError.AttributeNotFound |> leaf p)
       | a     -> good a.Value
@@ -481,7 +470,7 @@ module XTransform =
     xattribute name ""
 
   let xtext : XTransform<string> =
-    fun e p ->
+    xtrans <| fun e p ->
       good e.Value
 
   // Mappers
@@ -503,7 +492,7 @@ module XTransform =
   // Checks
 
   let xcheck (xeq : XElementQuery) : XTransform<unit> =
-    fun e p ->
+    xtrans <| fun e p ->
       if xqtestElement xeq e then
         good ()
       else
@@ -512,8 +501,7 @@ module XTransform =
   // Queries
 
   let inline xdescendant (xeq : XElementQuery) v (t : XTransform<'T>) : XTransform<'T> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let r = ref Unchecked.defaultof<_>
       if Loops.xdescendant xeq r t p e.ChildNodes e.ChildNodes.Count 0 then
         !r
@@ -524,15 +512,13 @@ module XTransform =
     xdescendant xeq (zero ()) t
 
   let inline xdescendants (xeq : XElementQuery) (t : XTransform<'T>) : XTransform<'T []> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let r = ResizeArray defaultSize
       let et = Loops.xdescendants xeq r t empty p e.ChildNodes e.ChildNodes.Count 0
       result (r.ToArray ()) et
 
   let inline xelement (xeq : XElementQuery) v (t : XTransform<'T>) : XTransform<'T> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let r = ref Unchecked.defaultof<_>
       if Loops.xelement xeq r t p e.ChildNodes e.ChildNodes.Count 0 then
         !r
@@ -543,15 +529,13 @@ module XTransform =
     xelement xeq (zero ()) t
 
   let inline xelements (xeq : XElementQuery) (t : XTransform<'T>) : XTransform<'T []> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       let r = ResizeArray defaultSize
       let et = Loops.xelements xeq r t empty p e.ChildNodes e.ChildNodes.Count 0
       result (r.ToArray ()) et
 
   let inline xparent v (t : XTransform<'T>) : XTransform<'T> =
-    let t = adapt t
-    fun e p ->
+    xtrans <| fun e p ->
       match p, e.ParentNode with
       | _::p, (:? XmlElement as e) ->
         invoke t e p
