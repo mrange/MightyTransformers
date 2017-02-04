@@ -1,5 +1,5 @@
 // ----------------------------------------------------------------------------------------------
-// Copyright 2017 M�rten R�nge
+// Copyright 2017 Mårten Rånge
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
