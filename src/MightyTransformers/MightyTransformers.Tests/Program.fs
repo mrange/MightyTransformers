@@ -691,6 +691,88 @@ module JsonSamples =
     let r = jrunOnString true jauthors [||] authors
     printfn "sample6: %A" r
 
+  let sample7 () =
+    let authors = """
+[
+    {
+        "name"    : "Ludwig"
+      , "surname" : "Wittgenstein"
+      , "works"   : [
+          {
+              "kind"    : "book"
+            , "title"   : "Tractatus Logico-Philosophicus"
+          }
+        , {
+              "kind"    : "book"
+            , "title"   : "Philosophical Investigations"
+          }
+        , {
+              "kind"    : "manuscript"
+            , "title"   : "Notes on Logic"
+          }
+      ]
+    }
+  , {
+        "name"    : "Rene"
+      , "surname" : "Descartes"
+      , "birth"   : 1596
+      , "works"   : [
+          {
+              "kind"    : "book"
+            , "title"   : "Discourse on Method and the Meditations"
+          }
+        , {
+              "kind"    : "book"
+            , "title"   : "Meditations and Other Metaphysical Writings"
+          }
+        , {
+              "kind"    : "notes"
+            , "title"   : "Some unfinished notes"
+          }
+      ]
+    }
+]
+"""
+    let jexpectString e =
+      jtransform {
+        let! a = jstring
+        if e = a then
+          return ()
+        else
+          return! jfailuref () "Expected '%s' but found '%s'" e a
+      }
+    let jhasKind kind = jmember "kind" () (jexpectString kind)
+    let jstr k = jmember k "" jasString
+    let jbook =
+      jtransform {
+        do! jhasKind "book"
+        let! jtitle = jstr "title"
+        return Book jtitle
+      }
+    let jmanuscript =
+      jtransform {
+        do! jhasKind "manuscript"
+        let! jtitle = jstr "title"
+        return Manuscript jtitle
+      }
+    let jwork = jbook <|> jmanuscript
+    let jworks = jmany jwork
+    let jauthor =
+      let inner name surname =
+        jtransform {
+          let! birth    = jmemberz  "birth"         jfloat  |>> int |> jtoOption
+          let! works    = jmember   "works"   [||]  jworks
+          return Author.New name surname birth works
+        } |> jwithContext (sprintf "%s %s" name surname)
+      jtransform {
+        let! name     = jmember   "name"    ""    jstring
+        let! surname  = jmember   "surname" ""    jstring
+        return! inner name surname
+      }
+    let jauthors = jmany jauthor
+    let r = jrunOnString true jauthors [||] authors
+    printfn "sample7: %A" r
+
   let run () =
     sample1 ()
     sample2 ()
@@ -698,6 +780,7 @@ module JsonSamples =
     sample4 ()
     sample5 ()
     sample6 ()
+    sample7 ()
 
 open Common
 open System

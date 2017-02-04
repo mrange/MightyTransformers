@@ -182,6 +182,188 @@ let jauthors = jmany jauthor
 >                     YearOfBirth = Some 1596;
 >                     Works = [||];}|], [||])
 
-There are other ways to suppress errors.
+Let's refine the JSON to include some works by the authors:
 
+```json
+[
+    {
+        "name"    : "Ludwig"
+      , "surname" : "Wittgenstein"
+      , "works"   : [
+          {
+              "kind"    : "book"
+            , "title"   : "Tractatus Logico-Philosophicus"
+          }
+        , {
+              "kind"    : "book"
+            , "title"   : "Philosophical Investigations"
+          }
+        , {
+              "kind"    : "manuscript"
+            , "title"   : "Notes on Logic"
+          }
+      ]
+    }
+  , {
+        "name"    : "Rene"
+      , "surname" : "Descartes"
+      , "birth"   : 1596
+      , "works"   : [
+          {
+              "kind"    : "book"
+            , "title"   : "Discourse on Method and the Meditations"
+          }
+        , {
+              "kind"    : "book"
+            , "title"   : "Meditations and Other Metaphysical Writings"
+          }
+        , {
+              "kind"    : "notes"
+            , "title"   : "Some unfinished notes"
+          }
+      ]
+    }
+]
+```
 
+Our model has two kind of work:
+
+```fsharp
+type Work =
+  | Book        of string
+  | Manuscript  of string
+```
+
+The book and the manuscript JSON looks very similar but they have a tag `kind` to identify what kind of work it is:
+
+```json
+[
+    {
+        "kind"    : "book"
+      , "title"   : "Tractatus Logico-Philosophicus"
+    }
+  , {
+        "kind"    : "book"
+      , "title"   : "Philosophical Investigations"
+    }
+  , {
+        "kind"    : "manuscript"
+      , "title"   : "Notes on Logic"
+    }
+]
+```
+
+In order to transform the json into a `Work` we first define a function that checks if the current context is specific a string value:
+
+```fsharp
+let jexpectString e =
+  jtransform {
+    let! a = jstring
+    if e = a then
+      return ()
+    else
+      return! jfailuref () "Expected '%s' but found '%s'" e a
+  }
+```
+
+This used to define `jisKind` that checks if there's an member named `kind` with a specific string value:
+
+```fsharp
+let jhasKind kind = jmember "kind" () (jexpectString kind)
+```
+
+As we often define string members we define a helper function:
+
+```fsharp
+let jstr k      = jmember k "" jasString
+```
+
+We can now define a transformer for a book:
+
+```fsharp
+let jbook =
+  jtransform {
+    do! jhasKind "book"
+    let! jtitle = jstr "title"
+    return Book jtitle
+  }
+```
+
+The manuscript transformer is very similar:
+
+```fsharp
+let jmanuscript =
+  jtransform {
+    do! jhasKind "manuscript"
+    let! jtitle = jstr "title"
+    return Manuscript jtitle
+  }
+```
+
+In order to transform either a book or a manuscript we use the combinator `<|>`:
+
+```fsharp
+let jwork   = jbook <|> jmanuscript
+let jworks  = jmany jwork
+```
+
+Completing the transformer is easy:
+
+```fsharp
+let jauthor =
+  jtransform {
+    let! name     = jmember   "name"    ""    jstring
+    let! surname  = jmember   "surname" ""    jstring
+    let! birth    = jmemberz  "birth"         jfloat  |>> int |> jtoOption
+    let! works    = jmember   "works"   [||]  jworks
+    return Author.New name surname birth works
+  }
+let jauthors = jmany jauthor
+```
+
+The result is this:
+
+> ([|{FirstName = "Ludwig";
+>     LastName = "Wittgenstein";
+>     YearOfBirth = null;
+>     Works =
+>      [|Book "Tractatus Logico-Philosophicus";
+>        Book "Philosophical Investigations"; Manuscript "Notes on Logic"|];}|],
+>  [|{IsSuppressed = false;
+>     Path = "json.[1].works.[2].kind";
+>     Error = Message "Expected 'book' but found 'notes'";};
+>    {IsSuppressed = false;
+>     Path = "json.[1].works.[2].kind";
+>     Error = Message "Expected 'manuscript' but found 'notes'";}|])
+
+So it kind of worked but it detected we had an unexpected work `notes`. We can define an additional member for `Work` but instead let's improve the error reporting so that we include the name of the author in the path using `jwithContext`:
+
+```fsharp
+let jauthor =
+  let inner name surname =
+    jtransform {
+      let! birth    = jmemberz  "birth"         jfloat  |>> int |> jtoOption
+      let! works    = jmember   "works"   [||]  jworks
+      return Author.New name surname birth works
+    } |> jwithContext (sprintf "%s %s" name surname)
+  jtransform {
+    let! name     = jmember   "name"    ""    jstring
+    let! surname  = jmember   "surname" ""    jstring
+    return! inner name surname
+  }
+```
+
+The idea here is that first we try to extract `name` and `surname` and pass them to `inner` which is wrapped in `jwithContext (sprintf "%s %s" name surname)`. This adds the name of the author to the path like this:
+
+> sample7: ([|{FirstName = "Ludwig";
+>     LastName = "Wittgenstein";
+>     YearOfBirth = null;
+>     Works =
+>      [|Book "Tractatus Logico-Philosophicus";
+>        Book "Philosophical Investigations"; Manuscript "Notes on Logic"|];}|],
+>  [|{IsSuppressed = false;
+>     Path = "json.[1](Rene Descartes).works.[2].kind";
+>     Error = Message "Expected 'book' but found 'notes'";};
+>    {IsSuppressed = false;
+>     Path = "json.[1](Rene Descartes).works.[2].kind";
+>     Error = Message "Expected 'manuscript' but found 'notes'";}|])
