@@ -36,27 +36,35 @@ type JContext = JContextElement list
 type JError =
   | CanNotConvertToFloat
   | CanNotConvertToString
-  | Failure               of string
   | IndexOutOfRange       of int
   | MemberNotFound        of string
+  | Message               of string
   | NotAnArrayOrObject
   | NotABool
   | NotAFloat
   | NotAString
   | NotAnObject
-  | Warning               of string
 
 [<RequireQualifiedAccess>]
 type JErrorTree =
   | Empty
-  | Leaf  of JContext*JError
-  | Fork  of JErrorTree*JErrorTree
+  | Leaf      of JContext*JError
+  | Suppress  of JErrorTree
+  | Fork      of JErrorTree*JErrorTree
 
 type JResult<'T>(v : 'T, et : JErrorTree) =
   struct
     member x.Value      = v
     member x.ErrorTree  = et
   end
+
+type JErrorItem =
+  {
+    IsSuppressed  : bool
+    Path          : string
+    Error         : JError
+  }
+  static member New i p e : JErrorItem = { IsSuppressed = i; Path = p; Error = e }
 
 type JTransform<'T> = Json -> JContext -> JResult<'T>
 
@@ -73,11 +81,25 @@ module JTransform =
 
     let inline leaf p e = JErrorTree.Leaf (p, e)
 
+    let empty           = JErrorTree.Empty
+
+    let inline isGood e=
+      match e with
+      | JErrorTree.Empty
+      | JErrorTree.Suppress _ -> true
+      | _                     -> false
+
+    let inline supp e   =
+      match e with
+      | JErrorTree.Empty  -> e
+      | _                 -> JErrorTree.Suppress e
+
     let inline join l r =
       match l, r with
-      | JErrorTree.Empty  , _                 -> r
-      | _                 , JErrorTree.Empty  -> l
-      | _                 , _                 -> JErrorTree.Fork (l, r)
+      | JErrorTree.Empty      , _                     -> r
+      | _                     , JErrorTree.Empty      -> l
+      | JErrorTree.Suppress l , JErrorTree.Suppress r -> JErrorTree.Fork (l, r) |> JErrorTree.Suppress
+      | _                     , _                     -> JErrorTree.Fork (l, r)
 
     let inline invoke (t : OptimizedClosures.FSharpFunc<Json,JContext,JResult<_>>) e p = t.Invoke (e, p)
 
@@ -98,19 +120,20 @@ module JTransform =
 
     let collapse (et : JErrorTree) =
       // Verified that call to private collapse don't do "funny" stuff
-      let rec collapse (result : ResizeArray<_>) et =
+      let rec collapse suppress (result : ResizeArray<_>) et =
         match et with
-        | JErrorTree.Empty         -> ()
-        | JErrorTree.Leaf  (p, e)  -> result.Add (pathToString p, e)
-        | JErrorTree.Fork  (l, r)  -> collapse result l; collapse result r
+        | JErrorTree.Empty            -> ()
+        | JErrorTree.Leaf     (p, e)  -> JErrorItem.New suppress (pathToString p) e |> result.Add
+        | JErrorTree.Suppress e       -> collapse true result e
+        | JErrorTree.Fork     (l, r)  -> collapse suppress result l; collapse suppress result r
 
       let result = ResizeArray defaultSize
-      collapse result et
+      collapse false result et
       result.ToArray ()
 
     let inline result  v et = JResult (v, et)
 
-    let inline good    v    = result v JErrorTree.Empty
+    let inline good    v    = result v empty
 
     module Loops =
       let rec jmany t p (r : ResizeArray<_>) (ms : _ []) m et i =
@@ -118,9 +141,8 @@ module JTransform =
           let v = m ms.[i]
           let ip = (JContextElement.Index i)::p
           let tr = invoke t v ip
-          match tr.ErrorTree with
-          | JErrorTree.Empty -> r.Add tr.Value
-          | _     -> ()
+          if isGood tr.ErrorTree then
+            r.Add tr.Value
           jmany t p r ms m (join et tr.ErrorTree) (i + 1)
         else
           et
@@ -187,13 +209,13 @@ module JTransform =
     let r = adapt r
     fun j p ->
       let lr = invoke l j p
-      match lr.ErrorTree with
-      | JErrorTree.Empty  -> lr
-      | _                 ->
+      if isGood lr.ErrorTree then
+        lr
+      else
         let rr = invoke r j p
-        match rr.ErrorTree with
-        | JErrorTree.Empty -> rr
-        | _     ->
+        if isGood rr.ErrorTree then
+          rr
+        else
           result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline jkeepLeft (l : JTransform<'T>) (r : JTransform<_>) : JTransform<'T> =
@@ -220,33 +242,46 @@ module JTransform =
       let rr = invoke r j p
       result (lr.Value, rr.Value) (join lr.ErrorTree rr.ErrorTree)
 
+  let inline jsuppress (t : JTransform<'T>) : JTransform<'T> =
+    let t = adapt t
+    fun j p ->
+      let tr = invoke t j p
+      let e  =
+        if isGood tr.ErrorTree then
+          tr.ErrorTree
+        else
+          tr.ErrorTree |> supp
+      result tr.Value e
+
   let inline jtoOption (t : JTransform<'T>) : JTransform<'T option> =
     let t = adapt t
     fun j p ->
       let tr = invoke t j p
-      match tr.ErrorTree with
-      | JErrorTree.Empty  -> good (Some tr.Value)
-      | _                 -> good None
+      if isGood tr.ErrorTree then
+        good (Some tr.Value)
+      else
+        good None
 
-  let inline jtoResult (t : JTransform<'T>) : JTransform<Result<'T, (string*JError) []>> =
+  let inline jtoResult (t : JTransform<'T>) : JTransform<Result<'T, JErrorItem []>> =
     let t = adapt t
     fun j p ->
       let tr = invoke t j p
-      match tr.ErrorTree with
-      | JErrorTree.Empty  -> good (Good tr.Value)
-      | _                 -> good (Bad (collapse tr.ErrorTree))
+      if isGood tr.ErrorTree then
+        good (Good tr.Value)
+      else
+        good (Bad (collapse tr.ErrorTree))
 
   // Failures
 
   let inline jfailure v msg : JTransform<'T> =
     fun j p ->
-      result v (msg |> JError.Failure |> leaf p)
+      result v (msg |> JError.Message |> leaf p)
 
   let inline jfailuref v fmt = kprintf (jfailure v) fmt
 
   let inline jwarning v msg : JTransform<'T> =
     fun j p ->
-      result v (msg |> JError.Warning |> leaf p)
+      result v (msg |> JError.Message |> leaf p |> supp)
 
   let inline jwarningf v fmt = kprintf (jwarning v) fmt
 
@@ -264,12 +299,13 @@ module JTransform =
       // TODO: Print shallow json data
       printfn "BEFORE  %s: %A" name p
       let tr = invoke t j p
-      match tr.ErrorTree with
-      | JErrorTree.Empty  -> printfn "SUCCESS %s: %A" name tr.Value
-      | _                 -> printfn "FAILURE %s: %A(%A)" name tr.Value tr.ErrorTree
+      if isGood tr.ErrorTree then
+        printfn "SUCCESS %s: %A(%A)" name tr.Value tr.ErrorTree
+      else
+        printfn "FAILURE %s: %A(%A)" name tr.Value tr.ErrorTree
       tr
 
-  let inline jrun (t : JTransform<'T>) (root : Json) =
+  let inline jrun (t : JTransform<'T>) (root : Json) : 'T*JErrorItem [] =
     let t = adapt t
     let tr = invoke t root []
     tr.Value, collapse tr.ErrorTree
@@ -384,11 +420,11 @@ module JTransform =
       match j with
       | Json.JsonObject ms ->
         let r = ResizeArray ms.Length
-        let et = Loops.jmany t p r ms snd JErrorTree.Empty 0
+        let et = Loops.jmany t p r ms snd empty 0
         result (r.ToArray ()) et
       | Json.JsonArray vs ->
         let r = ResizeArray vs.Length
-        let et = Loops.jmany t p r vs id JErrorTree.Empty 0
+        let et = Loops.jmany t p r vs id empty 0
         result (r.ToArray ()) et
       | _ ->
         result [||] (JError.NotAnArrayOrObject |> leaf p)

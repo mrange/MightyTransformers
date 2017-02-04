@@ -1,5 +1,5 @@
 // ----------------------------------------------------------------------------------------------
-// Copyright 2017 Mårten Rånge
+// Copyright 2017 Mï¿½rten Rï¿½nge
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -93,6 +93,9 @@ module JsonTransformerTest =
 
   open MiniJson.JsonModule
 
+  let jwarn p e = JErrorItem.New true   p e
+  let jfail p e = JErrorItem.New false  p e
+
   type Work =
     | Book        of string
     | Manuscript  of string
@@ -167,7 +170,7 @@ module JsonTransformerTest =
     let jbook       = jkind "book"        >>. jtitle |>> Book
     let jmanuscript = jkind "manuscript"  >>. jtitle |>> Manuscript
     let jwork       = jbook <|> jmanuscript
-    let jworks      = jmember "works" [||] (jmany jwork)
+    let jworks      = jmember "works" [||] (jmany jwork) |> jsuppress
     let jauthor     =
       jpair (jstr "name") (jstr "surname")
       >>= fun (name, surname) ->
@@ -190,10 +193,18 @@ module JsonTransformerTest =
               Book "Philosophical Investigations"
               Manuscript "Notes on Logic"
             |]
+          Author.New
+            "Rene"
+            "Descartes"
+            (Some 1596.)
+            [|
+              Book "Discourse on Method and the Meditations"
+              Book "Meditations and Other Metaphysical Writings"
+            |]
         |],
         [|
-          "root.[1](Rene Descartes).works.[2].kind", JError.Failure "Expected kind 'book' but found 'notes'"
-          "root.[1](Rene Descartes).works.[2].kind", JError.Failure "Expected kind 'manuscript' but found 'notes'"
+          jwarn "root.[1](Rene Descartes).works.[2].kind" <| JError.Message "Expected kind 'book' but found 'notes'"
+          jwarn "root.[1](Rene Descartes).works.[2].kind" <| JError.Message "Expected kind 'manuscript' but found 'notes'"
         |]
       let a = jrun jauthors json
       expect e a
@@ -217,9 +228,9 @@ module JsonTransformerTest =
     let jerr2     = jerr 0 "2"
     let jfok      = jarr ((+) 1)
     let jferr     = fun v -> jerr 0 (v.ToString ())
-    let jres0     = "root(0)", JError.Failure "Error"
-    let jres1     = "root(1)", JError.Failure "Error"
-    let jres2     = "root(2)", JError.Failure "Error"
+    let jres0     = jfail "root(0)" <| JError.Message "Error"
+    let jres1     = jfail "root(1)" <| JError.Message "Error"
+    let jres2     = jfail "root(2)" <| JError.Message "Error"
 
     module Primitives =
       let jexpect jv jerrs j =
@@ -283,6 +294,14 @@ module JsonTransformerTest =
         jexpect (0,2) [|jres1|]         <| jpair jerr1 jok2
         jexpect (0,0) [|jres1; jres2|]  <| jpair jerr1 jerr2
 
+      let test_jsuppress () =
+        // TODO: Suppress interacts with many combinators
+        //  Test combinators like jmany, jbind,
+        //  alternative all combinators should have a suppression test in them
+        let je = jwarn "root(1)" <| JError.Message "Error"
+        jexpect 1  [||]                 <| jsuppress jok1
+        jexpect 0  [|je|]               <| jsuppress jerr1
+
       let test_jtoOption () =
         jexpect (Some 1)  [||]          <| jtoOption jok1
         jexpect None      [||]          <| jtoOption jerr1
@@ -292,25 +311,25 @@ module JsonTransformerTest =
         jexpect (Bad [|jres1|]) [||]    <| jtoResult jerr1
 
       let test_jfailure () =
-        let jres s = "root", JError.Failure s
+        let jres s = jfail "root" <| JError.Message s
         jexpect 0 [|jres "Hello"|]      <| jfailure 0 "Hello"
         jexpect 0 [|jres "There"|]      <| jfailure 0 "There"
 
       let test_jfailuref () =
-        let jres s = "root", JError.Failure s
+        let jres s = jfail "root" <| JError.Message s
         jexpect 0 [|jres "Hello there"|]<| jfailuref 0 "Hello %s" "there"
 
       let test_jwarning () =
-        let jres s = "root", JError.Warning s
+        let jres s = jwarn "root" <| JError.Message s
         jexpect 0 [|jres "Hello"|]      <| jwarning 0 "Hello"
         jexpect 0 [|jres "There"|]      <| jwarning 0 "There"
 
       let test_jwarningf () =
-        let jres s = "root", JError.Warning s
+        let jres s = jwarn "root" <| JError.Message s
         jexpect 0 [|jres "Hello there"|]<| jwarningf 0 "Hello %s" "there"
 
       let test_jwithContext () =
-        let jres s = "root(Hello)(1)", JError.Failure s
+        let jres s = jfail "root(Hello)(1)" <| JError.Message s
         jexpect 1 [||]                  <| jwithContext "Hello" jok1
         jexpect 0 [|jres "Error"|]      <| jwithContext "Hello" jerr1
 
@@ -333,7 +352,7 @@ module JsonTransformerTest =
       let jws     = JsonString  ""
       let jobj    = JsonObject [|"hello", JsonString "there"|]
       let jarr    = JsonArray  [|JsonBoolean true; JsonString "hello"|]
-      let jres e  = "root", e
+      let jres e  = jfail "root" e
 
       let test_jisNull () =
         jexpect true  [||]                    jisNull <| jnull
@@ -401,10 +420,11 @@ module JsonTransformerTest =
         let j1  = j 1
         let j2  = j 2
         let jm1 = j -1
+        let je  = JErrorItem.New false "root.[0]" JError.NotAString
         jexpect ""      [|jres (JError.IndexOutOfRange -1)|]  jm1<| jobj
         jexpect ""      [|jres (JError.IndexOutOfRange -1)|]  jm1<| jarr
         jexpect "there" [||]                                  j0 <| jobj
-        jexpect ""      [|"root.[0]", JError.NotAString|]     j0 <| jarr
+        jexpect ""      [|je|]                                j0 <| jarr
         jexpect ""      [|jres (JError.IndexOutOfRange 1)|]   j1 <| jobj
         jexpect "hello" [||]                                  j1 <| jarr
         jexpect ""      [|jres (JError.IndexOutOfRange 2)|]   j2 <| jobj
