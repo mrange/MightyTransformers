@@ -306,9 +306,16 @@ module JsonTransformerTest =
         jexpect (Some 1)  [||]          <| jtoOption jok1
         jexpect None      [||]          <| jtoOption jerr1
 
+#if FSHARP_41
       let test_jtoResult () =
         jexpect (Good 1)        [||]    <| jtoResult jok1
         jexpect (Bad [|jres1|]) [||]    <| jtoResult jerr1
+#endif
+
+      let test_junpack () =
+        let j t = junpack (Choice1Of2 >> jreturn) (Choice2Of2 >> jreturn) t
+        jexpect (Choice1Of2 1)          [||]  <| j jok1
+        jexpect (Choice2Of2 [|jres1|])  [||]  <| j jerr1
 
       let test_jfailure () =
         let jres s = jfail "root" <| JError.Message s

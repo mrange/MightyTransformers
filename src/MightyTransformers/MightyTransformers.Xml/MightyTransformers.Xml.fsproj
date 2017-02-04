@@ -51,13 +51,6 @@
     <Compile Include="AssemblyInfo.fs" />
     <Compile Include="XmlTransformer.fs" />
   </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\MightyTransformers.Common\MightyTransformers.Common.fsproj">
-      <Name>MightyTransformers.Common</Name>
-      <Project>{3f26329f-4736-4632-8250-fe124d5092b6}</Project>
-      <Private>True</Private>
-    </ProjectReference>
-  </ItemGroup>
   <PropertyGroup>
     <MinimumVisualStudioVersion Condition="'$(MinimumVisualStudioVersion)' == ''">11</MinimumVisualStudioVersion>
   </PropertyGroup>

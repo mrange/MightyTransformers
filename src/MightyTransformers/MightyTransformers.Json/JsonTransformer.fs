@@ -23,8 +23,6 @@ open System.Text
 open MiniJson.JsonModule
 open MiniJson.DynamicJsonModule
 
-open MightyTransformers.Common
-
 [<RequireQualifiedAccess>]
 type JContextElement =
   | Member  of  string
@@ -66,16 +64,23 @@ type JErrorItem =
   }
   static member New i p e : JErrorItem = { IsSuppressed = i; Path = p; Error = e }
 
-type JTransform<'T> = Json -> JContext -> JResult<'T>
+//
+
+[<NoEquality>]
+[<NoComparison>]
+type JTransform<'T> (f : OptimizedClosures.FSharpFunc<Json, JContext, JResult<'T>>) = 
+  struct
+    member x.Invoke (j, p) = f.Invoke (j, p)
+  end
 
 module JTransform =
   open FSharp.Core.Printf
-  open MightyTransformers.Common
 
   module Details =
 
     let defaultSize     = 16
-    let inline adapt f  = OptimizedClosures.FSharpFunc<_, _, _>.Adapt f
+
+    let inline jtrans f = JTransform(OptimizedClosures.FSharpFunc<_, _, _>.Adapt f)
 
     let inline zero ()  = LanguagePrimitives.GenericZero<_>
 
@@ -101,7 +106,7 @@ module JTransform =
       | JErrorTree.Suppress l , JErrorTree.Suppress r -> JErrorTree.Fork (l, r) |> JErrorTree.Suppress
       | _                     , _                     -> JErrorTree.Fork (l, r)
 
-    let inline invoke (t : OptimizedClosures.FSharpFunc<Json,JContext,JResult<_>>) e p = t.Invoke (e, p)
+    let inline invoke (t : JTransform<'T>) j p = t.Invoke (j, p)
 
     let pathToString p =
       // Verified that call to private pathToString don't do "funny" stuff
@@ -163,15 +168,13 @@ module JTransform =
   // Monad
 
   let inline jreturn v : JTransform<'T> =
-    fun j p ->
+    jtrans <| fun j p ->
       good v
 
   let inline jbind (t : JTransform<'T>) (uf : 'T -> JTransform<'U>) : JTransform<'U> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       let tr  = invoke t j p
       let u   = uf tr.Value
-      let u   = adapt u
       let ur  = invoke u j p
       result ur.Value (join tr.ErrorTree ur.ErrorTree)
 
@@ -187,9 +190,7 @@ module JTransform =
   let inline jpure v = jreturn v
 
   let inline japply (t : JTransform<'U -> 'V>) (u : JTransform<'U>) : JTransform<'V> =
-    let t = adapt t
-    let u = adapt u
-    fun j p ->
+    jtrans <| fun j p ->
       let tr  = invoke t j p
       let ur  = invoke u j p
       result (tr.Value ur.Value) (join tr.ErrorTree ur.ErrorTree)
@@ -197,17 +198,14 @@ module JTransform =
   // Functor
 
   let inline jmap m (t : JTransform<'T>) : JTransform<'U> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       let tr = invoke t j p
       result (m tr.Value) tr.ErrorTree
 
   // Combinators
 
   let inline jorElse (l : JTransform<'T>) (r : JTransform<'T>) : JTransform<'T> =
-    let l = adapt l
-    let r = adapt r
-    fun j p ->
+    jtrans <| fun j p ->
       let lr = invoke l j p
       if isGood lr.ErrorTree then
         lr
@@ -219,32 +217,25 @@ module JTransform =
           result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline jkeepLeft (l : JTransform<'T>) (r : JTransform<_>) : JTransform<'T> =
-    let l = adapt l
-    let r = adapt r
-    fun j p ->
+    jtrans <| fun j p ->
       let lr = invoke l j p
       let rr = invoke r j p
       result lr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline jkeepRight (l : JTransform<_>) (r : JTransform<'T>) : JTransform<'T> =
-    let l = adapt l
-    let r = adapt r
-    fun j p ->
+    jtrans <| fun j p ->
       let lr = invoke l j p
       let rr = invoke r j p
       result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline jpair (l : JTransform<'T>) (r : JTransform<'U>) : JTransform<'T*'U> =
-    let l = adapt l
-    let r = adapt r
-    fun j p ->
+    jtrans <| fun j p ->
       let lr = invoke l j p
       let rr = invoke r j p
       result (lr.Value, rr.Value) (join lr.ErrorTree rr.ErrorTree)
 
   let inline jsuppress (t : JTransform<'T>) : JTransform<'T> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       let tr = invoke t j p
       let e  =
         if isGood tr.ErrorTree then
@@ -254,33 +245,43 @@ module JTransform =
       result tr.Value e
 
   let inline jtoOption (t : JTransform<'T>) : JTransform<'T option> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       let tr = invoke t j p
       if isGood tr.ErrorTree then
         good (Some tr.Value)
       else
         good None
 
+#if FSHARP_41
   let inline jtoResult (t : JTransform<'T>) : JTransform<Result<'T, JErrorItem []>> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       let tr = invoke t j p
       if isGood tr.ErrorTree then
         good (Good tr.Value)
       else
         good (Bad (collapse tr.ErrorTree))
+#endif
+
+  let inline junpack (ok : 'T -> JTransform<'U>) (bad : JErrorItem [] -> JTransform<'U>) (t : JTransform<'T>) =
+    jtrans <| fun j p ->
+      let tr = invoke t j p
+      if isGood tr.ErrorTree then
+        let tok = ok tr.Value
+        invoke tok j p
+      else
+        let tbad = bad (collapse tr.ErrorTree)
+        invoke tbad j p
 
   // Failures
 
   let inline jfailure v msg : JTransform<'T> =
-    fun j p ->
+    jtrans <| fun j p ->
       result v (msg |> JError.Message |> leaf p)
 
   let inline jfailuref v fmt = kprintf (jfailure v) fmt
 
   let inline jwarning v msg : JTransform<'T> =
-    fun j p ->
+    jtrans <| fun j p ->
       result v (msg |> JError.Message |> leaf p |> supp)
 
   let inline jwarningf v fmt = kprintf (jwarning v) fmt
@@ -288,14 +289,12 @@ module JTransform =
   // Misc
 
   let inline jwithContext name (t : JTransform<'T>) : JTransform<'T> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       let np = (JContextElement.Named name)::p
       invoke t j np
 
   let inline jdebug name (t : JTransform<'T>) : JTransform<'T> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       // TODO: Print shallow json data
       printfn "BEFORE  %s: %A" name p
       let tr = invoke t j p
@@ -306,14 +305,13 @@ module JTransform =
       tr
 
   let inline jrun (t : JTransform<'T>) (root : Json) : 'T*JErrorItem [] =
-    let t = adapt t
     let tr = invoke t root []
     tr.Value, collapse tr.ErrorTree
 
   // Extractors
 
   let jisNull : JTransform<bool> =
-    fun j p ->
+    jtrans <| fun j p ->
       good <|
         match j with
         | JsonNull      -> true
@@ -324,7 +322,7 @@ module JTransform =
         | JsonObject  _ -> false
 
   let jbool : JTransform<bool> =
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | JsonBoolean v -> v |> good
       | JsonNull
@@ -334,7 +332,7 @@ module JTransform =
       | JsonObject  _ -> result false (JError.NotABool |> leaf p)
 
   let jfloat : JTransform<float> =
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | JsonNumber  v -> v |> good
       | JsonNull
@@ -344,7 +342,7 @@ module JTransform =
       | JsonObject  _ -> result 0. (JError.NotAFloat |> leaf p)
 
   let jstring : JTransform<string> =
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | JsonString  v -> v |> good
       | JsonNull
@@ -355,11 +353,11 @@ module JTransform =
       | JsonObject  _ -> result "" (JError.NotAString |> leaf p)
 
   let jvalue : JTransform<Json> =
-    fun j p ->
+    jtrans <| fun j p ->
       good j
 
   let jasBool : JTransform<bool> =
-    fun j p ->
+    jtrans <| fun j p ->
       good <|
         match j with
         | JsonNull      -> false
@@ -370,7 +368,7 @@ module JTransform =
         | JsonObject  _ -> false
 
   let jasFloat : JTransform<float> =
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | JsonNull      -> 0. |> good
       | JsonBoolean v -> (if v then 1. else 0.) |> good
@@ -382,7 +380,7 @@ module JTransform =
       | JsonObject  _ -> result 0. (JError.CanNotConvertToFloat |> leaf p)
 
   let jasString : JTransform<string> =
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | JsonNull      -> "" |> good
       | JsonBoolean v -> (if v then "true" else "false") |> good
@@ -394,7 +392,6 @@ module JTransform =
   // Queries
 
   let inline jindex idx v (t : JTransform<'T>) : JTransform<'T> =
-    let t = adapt t
     let inline jindex idx dv t p m (ms : _ []) =
       if idx >= 0 && idx < ms.Length then
         let v = m ms.[idx]
@@ -402,7 +399,7 @@ module JTransform =
         invoke t v ip
       else
         result dv (idx |> JError.IndexOutOfRange |> leaf p)
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | Json.JsonObject ms ->
         jindex idx v t p snd ms
@@ -415,8 +412,7 @@ module JTransform =
     jindex idx (zero ()) t
 
   let inline jmany (t : JTransform<'T>) : JTransform<'T []> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | Json.JsonObject ms ->
         let r = ResizeArray ms.Length
@@ -430,8 +426,7 @@ module JTransform =
         result [||] (JError.NotAnArrayOrObject |> leaf p)
 
   let inline jmember name v (t : JTransform<'T>) : JTransform<'T> =
-    let t = adapt t
-    fun j p ->
+    jtrans <| fun j p ->
       match j with
       | Json.JsonObject ms ->
         Loops.jmember name v t p ms 0

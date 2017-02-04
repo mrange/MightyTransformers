@@ -19,8 +19,6 @@ module MightyTransformers.Xml.XmlTransformer
 open System.Text
 open System.Xml
 
-open MightyTransformers.Common
-
 [<RequireQualifiedAccess>]
 type XName =
   | Global    of string*string
@@ -166,7 +164,6 @@ module XElementQueries =
 
 module XTransform =
   open FSharp.Core.Printf
-  open MightyTransformers.Common
 
   module Details =
     open XElementQueries.Details
@@ -405,6 +402,7 @@ module XTransform =
       else
         good None
 
+#if FSHARP_41
   let inline xtoResult (t : XTransform<'T>) : XTransform<Result<'T, XErrorItem []>> =
     let t = adapt t
     fun e p ->
@@ -413,6 +411,16 @@ module XTransform =
         good (Good tr.Value)
       else
         good (Bad (collapse tr.ErrorTree))
+#endif
+
+  let inline xunpack (ok : 'T -> XTransform<'U>) (bad : XErrorItem [] -> XTransform<'U>) (t : XTransform<'T>) =
+    let t = adapt t
+    fun j p ->
+      let tr = invoke t j p
+      if isGood tr.ErrorTree then
+        ok tr.Value
+      else
+        bad (collapse tr.ErrorTree)
 
   // Failures
 
