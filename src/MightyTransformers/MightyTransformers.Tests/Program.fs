@@ -85,6 +85,115 @@ module Common =
     let dt  = mi.DeclaringType
     runAllTestsIn dt
 
+module JsonTransformerTest2 =
+  open System
+  open System.IO
+  open System.Globalization
+
+  open MiniJson.JsonModule
+  open MiniJson.DynamicJsonModule
+  open MiniJson.DynamicJsonModule.Infixes
+
+  type TimeEntry = TimeEntry of DateTime*String*float
+
+  let test_authorsTransform () =
+    let json = File.ReadAllText @"C:\temp\json\sample_response.json"
+    match parse true json with
+    | ParseResult.Success json      ->
+      let fromDate    = DateTime.MinValue
+      let toDate      = DateTime.MaxValue
+      let parseDate s =
+        let s = (s : string).Substring (0, 19)
+        match DateTime.TryParseExact (s, "s", CultureInfo.InvariantCulture, DateTimeStyles.None) with
+        | true  , dt  -> dt |> Some
+        | false , _   -> None
+
+      let result =
+        seq {
+          for issue in json.Query?issues.Children do
+            let key = issue?key.AsString
+            yield! seq { 
+              for history in issue?changelog?histories.Children do 
+                let timeItems   = history?items.Children |> Array.filter (fun item -> item?field.AsString = "timespent")
+                let created     = history?created.AsString
+                match parseDate created with
+                | None          -> ()
+                | Some created  when fromDate > created || toDate < created -> ()
+                | Some created  ->
+                  yield! seq {
+                    for timeItem in timeItems do
+                      let from  = timeItem?from.AsFloat
+                      let to_   = timeItem?``to``.AsFloat
+                      yield TimeEntry (created, key, to_ - from)
+                    }
+            }
+        } |> Seq.toArray
+      printfn "Success: %A" result
+    | ParseResult.Failure (msg, _)  ->
+      printfn "Failure: %A" msg
+
+module JsonTransformerTest3 =
+  open System
+  open System.IO
+  open System.Globalization
+
+  open MightyTransformers.Json.JsonTransformer
+  open MightyTransformers.Json.JsonTransformer.JTransform
+  open MightyTransformers.Json.JsonTransformer.JTransform.Infixes
+
+  open MiniJson.JsonModule
+
+  type TimeEntry = 
+    | TimeEntry of DateTime*String*float
+
+    static member Zero = TimeEntry (DateTime.MinValue, "", 0.0)
+
+  let test_authorsTransform () =
+    let json = File.ReadAllText @"C:\temp\json\sample_response.json"
+
+    let parseDate s =
+        let s = (s : string).Substring (0, 19)
+        match DateTime.TryParseExact (s, "s", CultureInfo.InvariantCulture, DateTimeStyles.None) with
+        | true  , dt  -> dt |> Some
+        | false , _   -> None
+
+    let jdateTime = 
+      jasString |>> parseDate >>= 
+        function 
+          | Some dt -> jreturn dt 
+          | _ -> jfailure DateTime.MinValue "Invalid date"
+
+    let zero = DateTime.MinValue
+
+    let jfield ft =
+      jmember "field" ()
+        (jasString >>= fun v -> if v = ft then jreturn () else jfailuref () "Expected field '%s' but found '%s'" ft v)
+
+    let jisTimespent = jfield "timespent"
+
+    match parse true json with
+    | ParseResult.Success json      ->
+      let jtimeentry key created =
+        jtransform {
+          do!     jisTimespent
+          let!    from = jmemberz "from"  jasFloat
+          let!    to_  = jmemberz "to"    jasFloat
+          return  TimeEntry (created, key, to_ - from)
+        } |> jsuppress
+      let jtimentries key created = jmember "items"     [||]  (jmany (jtimeentry key created))
+      let jhistory    key         = jmember "created"   zero  jdateTime               >>= jtimentries key
+      let jhistories  key         = jmember "histories" [||]  (jmany (jhistory key))  |>> Array.concat
+      let jchangelog  key         = jmember "changelog" [||]  (jhistories key)
+      let jissue                  = jmember "key"       ""    jstring                 >>= jchangelog
+      let jissues                 = jmember "issues"    [||]  (jmany jissue)          |>> Array.concat
+
+      let result                  = jrun jissues json
+
+      printfn "Success: %A" result
+    | ParseResult.Failure (msg, _)  ->
+      printfn "Failure: %A" msg
+
+
 module JsonTransformerTest =
   open Common
   open MightyTransformers.Json.JsonTransformer
@@ -790,8 +899,11 @@ let main argv =
   try
     Environment.CurrentDirectory <- AppDomain.CurrentDomain.BaseDirectory
 
-    runAllTests     ()
-    JsonSamples.run ()
+    //runAllTests     ()
+    //JsonSamples.run ()
+
+//    JsonTransformerTest2.test_authorsTransform ()
+    JsonTransformerTest3.test_authorsTransform ()
 
     if Common.errorTraceCount > 0 then
       errorf "Detected %d error(s)" Common.errorTraceCount
