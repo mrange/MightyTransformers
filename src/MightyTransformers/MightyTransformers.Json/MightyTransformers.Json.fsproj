@@ -9,8 +9,8 @@
     <OutputType>Library</OutputType>
     <RootNamespace>MightyTransformers.Json</RootNamespace>
     <AssemblyName>MightyTransformers.Json</AssemblyName>
-    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
-    <TargetFSharpCoreVersion>4.4.0.0</TargetFSharpCoreVersion>
+    <TargetFrameworkVersion>v4.6.2</TargetFrameworkVersion>
+    <TargetFSharpCoreVersion>4.4.1.0</TargetFSharpCoreVersion>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Name>MightyTransformers.Json</Name>
     <TargetFrameworkProfile />
