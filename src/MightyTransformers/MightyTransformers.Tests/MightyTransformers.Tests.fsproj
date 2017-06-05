@@ -106,6 +106,11 @@
       <Project>{68c7233e-b616-4233-a3b8-6881f11dfb2f}</Project>
       <Private>True</Private>
     </ProjectReference>
+    <ProjectReference Include="..\MightTransformers.Any\MightTransformers.Any.fsproj">
+      <Name>MightTransformers.Any</Name>
+      <Project>{a967a468-593c-4bcc-8efe-10826d90496e}</Project>
+      <Private>True</Private>
+    </ProjectReference>
     <ProjectReference Include="..\MightyTransformers.Common\MightyTransformers.Common.fsproj">
       <Name>MightyTransformers.Common</Name>
       <Project>{3f26329f-4736-4632-8250-fe124d5092b6}</Project>

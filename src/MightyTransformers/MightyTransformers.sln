@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 14
-VisualStudioVersion = 14.0.25420.1
+# Visual Studio 15
+VisualStudioVersion = 15.0.26430.12
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MightyTransformers.Tests", "MightyTransformers.Tests\MightyTransformers.Tests.fsproj", "{3A6B8E44-58BE-45CA-BD94-AE850628A859}"
 EndProject
@@ -12,6 +12,8 @@ EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MiniJson", "..\..\MiniJson\src\MiniJson\MiniJson.fsproj", "{68C7233E-B616-4233-A3B8-6881F11DFB2F}"
 EndProject
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MightyTransformers.Json", "MightyTransformers.Json\MightyTransformers.Json.fsproj", "{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "MightTransformers.Any", "MightTransformers.Any\MightTransformers.Any.fsproj", "{A967A468-593C-4BCC-8EFE-10826D90496E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -83,6 +85,18 @@ Global
 		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|x64.Build.0 = Release|Any CPU
 		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|x86.ActiveCfg = Release|Any CPU
 		{25F7E4FE-92FF-4577-9A3F-BC3F1F08A53E}.Release|x86.Build.0 = Release|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Debug|x64.Build.0 = Debug|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Debug|x86.Build.0 = Debug|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Release|x64.ActiveCfg = Release|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Release|x64.Build.0 = Release|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Release|x86.ActiveCfg = Release|Any CPU
+		{A967A468-593C-4BCC-8EFE-10826D90496E}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
