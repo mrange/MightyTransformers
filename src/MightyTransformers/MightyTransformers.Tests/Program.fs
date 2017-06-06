@@ -120,42 +120,43 @@ module AnyTransformerTest =
     let toMap (vs : (string*obj) [])  = vs |> Map.ofArray :> obj
 
     let authors = [|
-        [|
+        toMap [|
           "name"    , toObj "Ludwig"
           "surname" , toObj "Wittgenstein"
-          "works"   , [|
-              [|
+          "works"   , toObj [|
+              toMap [|
                 "kind"    , toObj "book"
                 "title"   , toObj "Tractatus Logico-Philosophicus"
-              |] |> toMap
-              [|
+              |]
+              toMap [|
                 "kind"    , toObj "book"
                 "title"   , toObj "Philosophical Investigations"
-              |] |> toMap
-              [|
+              |]
+              toMap [|
                 "kind"    , toObj "manuscript"
                 "title"   , toObj "Notes on Logic"
-              |] |> toMap
-            |] |> toObj
-        |] |> toMap
-        [|
+              |]
+            |]
+        |]
+        toMap [|
           "name"    , toObj "Rene"
           "surname" , toObj "Descartes"
-          "works"   , [|
-              [|
+          "birth"   , toObj "1596"
+          "works"   , toObj [|
+              toMap [|
                 "kind"    , toObj "book"
                 "title"   , toObj "Discourse on Method and the Meditations"
-              |] |> toMap
-              [|
+              |]
+              toMap [|
                 "kind"    , toObj "book"
                 "title"   , toObj "Meditations and Other Metaphysical Writings"
-              |] |> toMap
-              [|
+              |]
+              toMap [|
                 "kind"    , toObj "notes"
                 "title"   , toObj "Some unfinished notes"
-              |] |> toMap
-            |] |> toObj
-        |] |> toMap
+              |]
+            |]
+        |]
       |]
 
     let akind kind =
@@ -177,7 +178,7 @@ module AnyTransformerTest =
         |> awithContext (sprintf "%s %s" name surname)
     let aauthors    = amany aauthor
 
-    let adapterRepo = 
+    let adapterRepo =
       let adapterRepo = AnyAdapterRepository ()
       adapterRepo.AddLookup   AnyAdapter.mapLookup<obj>
       adapterRepo.AddIterator AnyAdapter.mapIterator<obj>
@@ -603,13 +604,13 @@ module JsonTransformerTest2 =
         match DateTime.TryParseExact (s, "s", CultureInfo.InvariantCulture, DateTimeStyles.None) with
         | true  , dt  -> dt |> Some
         | false , _   -> None
-      
+
       let result =
         seq {
           for issue in json.Query?issues.Children do
             let key = issue?key.AsString
-            yield! seq { 
-              for history in issue?changelog?histories.Children do 
+            yield! seq {
+              for history in issue?changelog?histories.Children do
                 let timeItems   = history?items.Children |> Array.filter (fun item -> item?field.AsString = "timespent")
                 let created     = history?created.AsString
                 match parseDate created with
@@ -639,7 +640,7 @@ module JsonTransformerTest3 =
 
   open MiniJson.JsonModule
 
-  type TimeEntry = 
+  type TimeEntry =
     | TimeEntry of DateTime*String*float
 
     static member Zero = TimeEntry (DateTime.MinValue, "", 0.0)
@@ -653,10 +654,10 @@ module JsonTransformerTest3 =
         | true  , dt  -> dt |> Some
         | false , _   -> None
 
-    let jdateTime = 
-      jasString |>> parseDate >>= 
-        function 
-          | Some dt -> jreturn dt 
+    let jdateTime =
+      jasString |>> parseDate >>=
+        function
+          | Some dt -> jreturn dt
           | _ -> jfailure DateTime.MinValue "Invalid date"
 
     let zero = DateTime.MinValue
@@ -1031,7 +1032,9 @@ let main argv =
     //JsonSamples.run ()
 
 //    JsonTransformerTest2.test_authorsTransform ()
-    JsonTransformerTest3.test_authorsTransform ()
+//    JsonTransformerTest3.test_authorsTransform ()
+
+    AnyTransformerTest.test_authorsTransform ()
 
     if Common.errorTraceCount > 0 then
       errorf "Detected %d error(s)" Common.errorTraceCount

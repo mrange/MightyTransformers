@@ -17,7 +17,7 @@
 module MightyTransformers.Any.AnyTransformer
 
 [<Struct>]
-type Maybe<'T> = 
+type Maybe<'T> =
   | Just    of 'T
   | Nothing
 
@@ -32,7 +32,7 @@ module Maybe =
   let inline mreturn v : Maybe<_> = Just v
   [<GeneralizableValue>]
   let mempty<'T> = Nothing
-  let inline mbind t uf : Maybe<_> = 
+  let inline mbind t uf : Maybe<_> =
     match t with
     | Just tv -> uf tv
     | Nothing -> Nothing
@@ -53,7 +53,7 @@ module Maybe =
   // Functor
 
   let inline mmap m t : Maybe<_> =
-    match t with 
+    match t with
     | Just tv -> m tv |> Just
     | Nothing -> Nothing
 
@@ -228,7 +228,7 @@ type AnyContext = AnyContext of AnyContextElement list
 
 [<RequireQualifiedAccess>]
 type AnyError =
-  | CanNotConvertTo       of Type
+  | CanNotConvertTo       of Type*Type
   | IndexOutOfRange       of int
   | MemberNotFound        of string
   | NotIndexable          of Type
@@ -244,7 +244,7 @@ type AnyErrorTree =
   | Fork      of AnyErrorTree*AnyErrorTree
 
 [<Struct>]
-type AnyResult<'T> = 
+type AnyResult<'T> =
   | AnyResult of 'T*AnyErrorTree
 
   member x.Value =
@@ -283,11 +283,80 @@ module AnyTransform =
 
     let defaultSize     = 16
 
+    let defaultCulture  = CultureInfo.InvariantCulture
+
+    module TypeMapper =
+      type Mapper<'From, 'To> = ('From -> Maybe<'To>)
+
+      type TypeMapper<'From> =
+        {
+          AsString  : 'From -> string
+          FromString: Mapper<string, 'From>
+          ToByte    : Mapper<'From, byte>
+          ToChar    : Mapper<'From, char>
+          ToDecimal : Mapper<'From, decimal>
+          ToFloat   : Mapper<'From, float>
+          ToFloat32 : Mapper<'From, float32>
+          ToInt16   : Mapper<'From, int16>
+          ToInt32   : Mapper<'From, int32>
+          ToInt64   : Mapper<'From, int64>
+          ToSByte   : Mapper<'From, sbyte>
+          ToUInt16  : Mapper<'From, uint16>
+          ToUInt32  : Mapper<'From, uint32>
+          ToUInt64  : Mapper<'From, uint64>
+        }
+
+        static member New asString fromString toByte toChar toDecimal toFloat toFloat32 toInt16 toInt32 toInt64 toSByte toUInt16 toUInt32 toUInt64 =
+          {
+            AsString    = asString
+            FromString  = fromString
+            ToByte      = toByte
+            ToChar      = toChar
+            ToDecimal   = toDecimal
+            ToFloat     = toFloat
+            ToFloat32   = toFloat32
+            ToInt16     = toInt16
+            ToInt32     = toInt32
+            ToInt64     = toInt64
+            ToSByte     = toSByte
+            ToUInt16    = toUInt16
+            ToUInt32    = toUInt32
+            ToUInt64    = toUInt64
+          } : TypeMapper<_>
+
+      let asString (v : #IFormattable)  = v.ToString("", defaultCulture)
+      let fromString v                  = Nothing
+
+      let do_map f t v =
+        let tv  = t v
+        let ftv = f tv
+        if ftv = v then Just tv else Nothing
+
+      let mdtoc, mctod =
+        let dtoc d = d |> int |> char
+        let ctod c = c |> int |> decimal
+        do_map dtoc ctod, do_map ctod dtoc
+
+      let ctos (c : char) = c.ToString ()
+
+      let tm_byte     = let inline m m = do_map byte    m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_char     = let inline m m = do_map char    m in TypeMapper<_>.New ctos     fromString (m byte) (m char) (mdtoc    ) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_decimal  = let inline m m = do_map decimal m in TypeMapper<_>.New asString fromString (m byte) (mctod ) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_float    = let inline m m = do_map float   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_float32  = let inline m m = do_map float32 m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_int16    = let inline m m = do_map int16   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_int32    = let inline m m = do_map int32   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_int64    = let inline m m = do_map int64   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_sbyte    = let inline m m = do_map sbyte   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_uint16   = let inline m m = do_map uint16  m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_uint32   = let inline m m = do_map uint32  m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_uint64   = let inline m m = do_map uint64  m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+
     let inline atrans f = AnyTransform(OptimizedClosures.FSharpFunc<_, _, _, _>.Adapt f)
 
     let inline zero ()  = LanguagePrimitives.GenericZero<_>
 
-    let inline getType o= if o <> null then o.GetType () else typeof<unit>
+    let inline getType o= if o <> null then o.GetType () else typeof<Void>
 
     let inline leaf c e = AnyErrorTree.Leaf (c, e)
 
@@ -301,7 +370,7 @@ module AnyTransform =
 
     let inline supp e   =
       match e with
-      | AnyErrorTree.Empty  
+      | AnyErrorTree.Empty
       | AnyErrorTree.Suppress _ -> e
       | _                       -> AnyErrorTree.Suppress e
 
@@ -351,7 +420,7 @@ module AnyTransform =
         let (AnyContext p)        = c
         let (AnyIterator getter)  = iterator
         match getter () with
-        | Just v -> 
+        | Just v ->
           let ic = (AnyContextElement.Index i)::p |> AnyContext
           let tr = invoke t v ic r
           if isGood tr.ErrorTree then
@@ -510,13 +579,17 @@ module AnyTransform =
 
   let aasFloat : AnyTransform<float> =
     atrans <| fun o c r ->
+      let canNotConvertTo o = result 0. (AnyError.CanNotConvertTo (getType o, typeof<float>)|> leaf c)
       match o with
-      | (:? float as v)   -> v |> good
-      | (:? int as v)     -> v |> float  |> good
-      | (:? string as v)  -> 
-        let b, f = Double.TryParse (v, NumberStyles.Float, CultureInfo.InvariantCulture)
-        if b then f |> good else result 0. (typeof<float> |> AnyError.CanNotConvertTo |> leaf c)
-      | _                 -> result 0. (typeof<float> |> AnyError.CanNotConvertTo |> leaf c)
+      | (:? float as v)   -> v |> float |> good
+      | (:? float32 as v) -> v |> float |> good
+      | (:? int32 as v)   -> v |> float |> good
+      | (:? int16 as v)   -> v |> float |> good
+      | (:? int8 as v)    -> v |> float |> good
+      | (:? string as v)  ->
+        let b, f = Double.TryParse (v, NumberStyles.Float, defaultCulture)
+        if b then f |> good else canNotConvertTo o
+      | _                 -> canNotConvertTo o
 
   let aasString : AnyTransform<string> =
     atrans <| fun o c r ->
