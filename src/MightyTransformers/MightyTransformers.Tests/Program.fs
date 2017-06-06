@@ -101,7 +101,7 @@ module AnyTransformerTest =
     {
       FirstName   : string
       LastName    : string
-      YearOfBirth : float option
+      YearOfBirth : int option
       Works       : Work []
     }
 
@@ -173,7 +173,7 @@ module AnyTransformerTest =
       (astr "name") <&> (astr "surname")
       >>= fun (name, surname) ->
         apure (Author.New name surname)
-        <*> (amemberz "birth" aasFloat |> atoOption)
+        <*> (amemberz "birth" aasInt32 |> atoOption)
         <*> aworks
         |> awithContext (sprintf "%s %s" name surname)
     let aauthors    = amany aauthor
@@ -201,7 +201,7 @@ module AnyTransformerTest =
         Author.New
           "Rene"
           "Descartes"
-          (Some 1596.)
+          (Some 1596)
           [|
             Book "Discourse on Method and the Meditations"
             Book "Meditations and Other Metaphysical Writings"

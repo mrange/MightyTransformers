@@ -228,13 +228,13 @@ type AnyContext = AnyContext of AnyContextElement list
 
 [<RequireQualifiedAccess>]
 type AnyError =
-  | CanNotConvertTo       of Type*Type
-  | IndexOutOfRange       of int
-  | MemberNotFound        of string
-  | NotIndexable          of Type
-  | NotLookupable         of Type
-  | NotIterable           of Type
-  | Message               of string
+  | CanNotConvertTo of obj*Type*Type
+  | IndexOutOfRange of int
+  | MemberNotFound  of string
+  | NotIndexable    of Type
+  | NotLookupable   of Type
+  | NotIterable     of Type
+  | Message         of string
 
 [<RequireQualifiedAccess>]
 type AnyErrorTree =
@@ -288,46 +288,72 @@ module AnyTransform =
     module TypeMapper =
       type Mapper<'From, 'To> = ('From -> Maybe<'To>)
 
-      type TypeMapper<'From> =
+      type TypeMapper<'T> =
         {
-          AsString  : 'From -> string
-          FromString: Mapper<string, 'From>
-          ToByte    : Mapper<'From, byte>
-          ToChar    : Mapper<'From, char>
-          ToDecimal : Mapper<'From, decimal>
-          ToFloat   : Mapper<'From, float>
-          ToFloat32 : Mapper<'From, float32>
-          ToInt16   : Mapper<'From, int16>
-          ToInt32   : Mapper<'From, int32>
-          ToInt64   : Mapper<'From, int64>
-          ToSByte   : Mapper<'From, sbyte>
-          ToUInt16  : Mapper<'From, uint16>
-          ToUInt32  : Mapper<'From, uint32>
-          ToUInt64  : Mapper<'From, uint64>
+          Zero        : 'T
+          AsString    : 'T -> string
+          FromString  : Mapper<string   , 'T>
+          FromByte    : Mapper<byte     , 'T>
+          FromChar    : Mapper<char     , 'T>
+          FromDecimal : Mapper<decimal  , 'T>
+          FromFloat   : Mapper<float    , 'T>
+          FromFloat32 : Mapper<float32  , 'T>
+          FromInt16   : Mapper<int16    , 'T>
+          FromInt32   : Mapper<int32    , 'T>
+          FromInt64   : Mapper<int64    , 'T>
+          FromSByte   : Mapper<sbyte    , 'T>
+          FromUInt16  : Mapper<uint16   , 'T>
+          FromUInt32  : Mapper<uint32   , 'T>
+          FromUInt64  : Mapper<uint64   , 'T>
         }
 
-        static member New asString fromString toByte toChar toDecimal toFloat toFloat32 toInt16 toInt32 toInt64 toSByte toUInt16 toUInt32 toUInt64 =
+        static member New zero asString fromString fromByte fromChar fromDecimal fromFloat fromFloat32 fromInt16 fromInt32 fromInt64 fromSByte fromUInt16 fromUInt32 fromUInt64 =
           {
+            Zero        = zero
             AsString    = asString
             FromString  = fromString
-            ToByte      = toByte
-            ToChar      = toChar
-            ToDecimal   = toDecimal
-            ToFloat     = toFloat
-            ToFloat32   = toFloat32
-            ToInt16     = toInt16
-            ToInt32     = toInt32
-            ToInt64     = toInt64
-            ToSByte     = toSByte
-            ToUInt16    = toUInt16
-            ToUInt32    = toUInt32
-            ToUInt64    = toUInt64
+            FromByte    = fromByte
+            FromChar    = fromChar
+            FromDecimal = fromDecimal
+            FromFloat   = fromFloat
+            FromFloat32 = fromFloat32
+            FromInt16   = fromInt16
+            FromInt32   = fromInt32
+            FromInt64   = fromInt64
+            FromSByte   = fromSByte
+            FromUInt16  = fromUInt16
+            FromUInt32  = fromUInt32
+            FromUInt64  = fromUInt64
           } : TypeMapper<_>
+
+      let parseDecimal s                =
+        let ns = NumberStyles.Float
+        match Decimal.TryParse(s, ns, defaultCulture) with
+        | true, v -> v |> Just
+        | _   , _ -> Nothing
+
+      let parseFloat m s                =
+        let ns = NumberStyles.Float
+        match Double.TryParse(s, ns, defaultCulture) with
+        | true, v -> v |> m |> Just
+        | _   , _ -> Nothing
+
+      let parseInt m s                  =
+        let ns = NumberStyles.Integer
+        match Int64.TryParse(s, ns, defaultCulture) with
+        | true, v -> v |> m |> Just
+        | _   , _ -> Nothing
+
+      let parseUInt m s                  =
+        let ns = NumberStyles.Integer
+        match UInt64.TryParse(s, ns, defaultCulture) with
+        | true, v -> v |> m |> Just
+        | _   , _ -> Nothing
 
       let asString (v : #IFormattable)  = v.ToString("", defaultCulture)
       let fromString v                  = Nothing
 
-      let do_map f t v =
+      let doMap t f v =
         let tv  = t v
         let ftv = f tv
         if ftv = v then Just tv else Nothing
@@ -335,22 +361,22 @@ module AnyTransform =
       let mdtoc, mctod =
         let dtoc d = d |> int |> char
         let ctod c = c |> int |> decimal
-        do_map dtoc ctod, do_map ctod dtoc
+        doMap dtoc ctod, doMap ctod dtoc
 
       let ctos (c : char) = c.ToString ()
 
-      let tm_byte     = let inline m m = do_map byte    m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_char     = let inline m m = do_map char    m in TypeMapper<_>.New ctos     fromString (m byte) (m char) (mdtoc    ) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_decimal  = let inline m m = do_map decimal m in TypeMapper<_>.New asString fromString (m byte) (mctod ) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_float    = let inline m m = do_map float   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_float32  = let inline m m = do_map float32 m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_int16    = let inline m m = do_map int16   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_int32    = let inline m m = do_map int32   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_int64    = let inline m m = do_map int64   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_sbyte    = let inline m m = do_map sbyte   m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_uint16   = let inline m m = do_map uint16  m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_uint32   = let inline m m = do_map uint32  m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
-      let tm_uint64   = let inline m m = do_map uint64  m in TypeMapper<_>.New asString fromString (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_byte     = let inline m m = doMap byte    m in TypeMapper<_>.New (byte    0) asString (parseUInt byte    ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_char     = let inline m m = doMap char    m in TypeMapper<_>.New (char    0) ctos     (parseInt char     ) (m byte) (m char) (mdtoc    ) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_decimal  = let inline m m = doMap decimal m in TypeMapper<_>.New (decimal 0) asString (parseDecimal      ) (m byte) (mctod ) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_float    = let inline m m = doMap float   m in TypeMapper<_>.New (float   0) asString (parseFloat float  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_float32  = let inline m m = doMap float32 m in TypeMapper<_>.New (float32 0) asString (parseFloat float32) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_int16    = let inline m m = doMap int16   m in TypeMapper<_>.New (int16   0) asString (parseInt int16    ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_int32    = let inline m m = doMap int32   m in TypeMapper<_>.New (int32   0) asString (parseInt int32    ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_int64    = let inline m m = doMap int64   m in TypeMapper<_>.New (int64   0) asString (parseInt int64    ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_sbyte    = let inline m m = doMap sbyte   m in TypeMapper<_>.New (sbyte   0) asString (parseInt sbyte    ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_uint16   = let inline m m = doMap uint16  m in TypeMapper<_>.New (uint16  0) asString (parseUInt uint16  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_uint32   = let inline m m = doMap uint32  m in TypeMapper<_>.New (uint32  0) asString (parseUInt uint32  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
+      let tm_uint64   = let inline m m = doMap uint64  m in TypeMapper<_>.New (uint64  0) asString (parseUInt uint64  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
 
     let inline atrans f = AnyTransform(OptimizedClosures.FSharpFunc<_, _, _, _>.Adapt f)
 
@@ -577,25 +603,49 @@ module AnyTransform =
 
   // Extractors
 
-  let aasFloat : AnyTransform<float> =
+  let aextract (tm : TypeMapper.TypeMapper<'T>) : AnyTransform<'T> =
     atrans <| fun o c r ->
-      let canNotConvertTo o = result 0. (AnyError.CanNotConvertTo (getType o, typeof<float>)|> leaf c)
-      match o with
-      | (:? float as v)   -> v |> float |> good
-      | (:? float32 as v) -> v |> float |> good
-      | (:? int32 as v)   -> v |> float |> good
-      | (:? int16 as v)   -> v |> float |> good
-      | (:? int8 as v)    -> v |> float |> good
-      | (:? string as v)  ->
-        let b, f = Double.TryParse (v, NumberStyles.Float, defaultCulture)
-        if b then f |> good else canNotConvertTo o
-      | _                 -> canNotConvertTo o
+      let mv =
+        match o with
+        | null                    -> Nothing
+        | (:? string  as v)       -> tm.FromString  v
+        | (:? byte    as v)       -> tm.FromByte    v
+        | (:? char    as v)       -> tm.FromChar    v
+        | (:? decimal as v)       -> tm.FromDecimal v
+        | (:? float   as v)       -> tm.FromFloat   v
+        | (:? float32 as v)       -> tm.FromFloat32 v
+        | (:? int16   as v)       -> tm.FromInt16   v
+        | (:? int32   as v)       -> tm.FromInt32   v
+        | (:? int64   as v)       -> tm.FromInt64   v
+        | (:? sbyte   as v)       -> tm.FromSByte   v
+        | (:? uint16  as v)       -> tm.FromUInt16  v
+        | (:? uint32  as v)       -> tm.FromUInt32  v
+        | (:? uint64  as v)       -> tm.FromUInt64  v
+        | (:? IFormattable as f)  -> tm.FromString  (f.ToString ("", defaultCulture))
+        | _                       -> tm.FromString  (o.ToString ())
+      match mv with
+      | Just v  -> v |> good
+      | Nothing -> result tm.Zero (AnyError.CanNotConvertTo (o, getType o, typeof<'T>)|> leaf c)
+
+  let aasByte    = aextract TypeMapper.tm_byte
+  let aasChar    = aextract TypeMapper.tm_char
+  let aasDecimal = aextract TypeMapper.tm_decimal
+  let aasFloat   = aextract TypeMapper.tm_float
+  let aasFloat32 = aextract TypeMapper.tm_float32
+  let aasInt16   = aextract TypeMapper.tm_int16
+  let aasInt32   = aextract TypeMapper.tm_int32
+  let aasInt64   = aextract TypeMapper.tm_int64
+  let aasSByte   = aextract TypeMapper.tm_sbyte
+  let aasUInt16  = aextract TypeMapper.tm_uint16
+  let aasUInt32  = aextract TypeMapper.tm_uint32
+  let aasUInt64  = aextract TypeMapper.tm_uint64
 
   let aasString : AnyTransform<string> =
     atrans <| fun o c r ->
       match o with
-      | (:? string as v)  -> v |> good
-      | _                 -> o |> string |> good
+      | (:? string as v)        -> v                                |> good
+      | (:? IFormattable as f)  -> f.ToString ("", defaultCulture)  |> good
+      | _                       -> o |> string                      |> good
 
   // Queries
 
