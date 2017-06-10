@@ -171,6 +171,34 @@ type AnyAdapterRepository() =
   member x.AddIteratorGen (g : AnyAdapterGen) : unit = addGen iteratorGens g
 
 module AnyAdapter =
+  let mapEnumerableIterator m (e : IEnumerable<'T>) : AnyIterator<'U> =
+    let e = e.GetEnumerator ()
+    AnyIterator <| fun () ->
+      if e.MoveNext () then
+        Just (m e.Current)
+      else
+        e.Dispose ()
+        Nothing
+
+  let mapEnumerableIndexer m (e : IEnumerable<'T>) : AnyIndexer<'U> =
+    AnyIndexer <| fun i ->
+      let e = e.GetEnumerator ()
+      let rec loop r =
+        if r > 0 then
+          if e.MoveNext () then
+            loop (r - 1)
+          else
+            Nothing
+        else
+          Just (m e.Current)
+      try
+        if e.MoveNext () then
+          loop i
+        else
+          Nothing
+      finally
+        e.Dispose ()
+
   let arrayIterator (a : 'T []) : AnyIterator<'T> =
     let mutable i = 0
     AnyIterator <| fun () ->
@@ -188,21 +216,19 @@ module AnyAdapter =
       else
         Nothing
 
+  let enumerableIndexer  e = mapEnumerableIndexer   id e
+
+  let enumerableIterator e = mapEnumerableIterator  id e
+
   let mapLookup (m : Map<string, 'T>) : AnyLookup<'T> =
     AnyLookup <| fun name ->
       match m |> Map.tryFind name with
       | Some v  -> v |> Just
       | None    -> Nothing
 
-  let mapIterator (m : Map<string, 'T>) : AnyIterator<'T> =
-    let e = (m :> IEnumerable<KeyValuePair<string, 'T>>)
-    let e = e.GetEnumerator ()
-    AnyIterator <| fun () ->
-      if e.MoveNext () then
-        Just e.Current.Value
-      else
-        e.Dispose ()
-        Nothing
+  let mapIindexer (m : Map<string, 'T>) = mapEnumerableIterator  (fun (kv : KeyValuePair<_, _>) -> kv.Value) m
+
+  let mapIterator (m : Map<string, 'T>) = mapEnumerableIterator  (fun (kv : KeyValuePair<_, _>) -> kv.Value) m
 
 (*
   let mapLookupGen : AnyAdapterGen =
@@ -378,7 +404,7 @@ module AnyTransform =
       let tm_uint32   = let inline m m = doMap uint32  m in TypeMapper<_>.New (uint32  0) asString (parseUInt uint32  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
       let tm_uint64   = let inline m m = doMap uint64  m in TypeMapper<_>.New (uint64  0) asString (parseUInt uint64  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
 
-    let inline atrans f = AnyTransform(OptimizedClosures.FSharpFunc<_, _, _, _>.Adapt f)
+    let inline ttrans f = AnyTransform(OptimizedClosures.FSharpFunc<_, _, _, _>.Adapt f)
 
     let inline zero ()  = LanguagePrimitives.GenericZero<_>
 
@@ -442,7 +468,7 @@ module AnyTransform =
     let inline good    v    = result v empty
 
     module Loops =
-      let rec amany t c r (ra : ResizeArray<_>) iterator et i =
+      let rec tmany t c r (ra : ResizeArray<_>) iterator et i =
         let (AnyContext p)        = c
         let (AnyIterator getter)  = iterator
         match getter () with
@@ -451,7 +477,7 @@ module AnyTransform =
           let tr = invoke t v ic r
           if isGood tr.ErrorTree then
             ra.Add tr.Value
-          amany t c r ra iterator (join et tr.ErrorTree) (i + 1)
+          tmany t c r ra iterator (join et tr.ErrorTree) (i + 1)
         | Nothing ->
           et
 
@@ -459,11 +485,11 @@ module AnyTransform =
 
   // Monad
 
-  let inline areturn v : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline treturn v : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       good v
-  let inline abind (t : AnyTransform<'T>) (uf : 'T -> AnyTransform<'U>) : AnyTransform<'U> =
-    atrans <| fun o c r->
+  let inline tbind (t : AnyTransform<'T>) (uf : 'T -> AnyTransform<'U>) : AnyTransform<'U> =
+    ttrans <| fun o c r->
       let tr  = invoke t o c r
       let u   = uf tr.Value
       let ur  = invoke u o c r
@@ -471,34 +497,34 @@ module AnyTransform =
 
   // Kleisli
 
-  let inline aarr f = AnyTransformKleisli <| fun v -> areturn (f v)
-  let inline akleisli tf uf = AnyTransformKleisli <| fun v -> abind (tf v) uf
+  let inline tarr f = AnyTransformKleisli <| fun v -> treturn (f v)
+  let inline tkleisli tf uf = AnyTransformKleisli <| fun v -> tbind (tf v) uf
 
   // Applicative
 
-  let inline apure v = areturn v
-  let inline aapply (t : AnyTransform<'U -> 'V>) (u : AnyTransform<'U>) : AnyTransform<'V> =
-    atrans <| fun o c r ->
+  let inline tpure v = treturn v
+  let inline tapply (t : AnyTransform<'U -> 'V>) (u : AnyTransform<'U>) : AnyTransform<'V> =
+    ttrans <| fun o c r ->
       let tr  = invoke t o c r
       let ur  = invoke u o c r
       result (tr.Value ur.Value) (join tr.ErrorTree ur.ErrorTree)
 
   // Functor
 
-  let inline amap m (t : AnyTransform<'T>) : AnyTransform<'U> =
-    atrans <| fun o c r->
+  let inline tmap m (t : AnyTransform<'T>) : AnyTransform<'U> =
+    ttrans <| fun o c r->
       let tr = invoke t o c r
       result (m tr.Value) tr.ErrorTree
 
   // Combinators
 
-  let inline aand (lt : AnyTransform<'T>) (rt : AnyTransform<'U>) : AnyTransform<'T*'U> =
-    atrans <| fun o c r ->
+  let inline tand (lt : AnyTransform<'T>) (rt : AnyTransform<'U>) : AnyTransform<'T*'U> =
+    ttrans <| fun o c r ->
       let lr = invoke lt o c r
       let rr = invoke rt o c r
       result (lr.Value, rr.Value) (join lr.ErrorTree rr.ErrorTree)
-  let inline aor (lt : AnyTransform<'T>) (rt : AnyTransform<'T>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tor (lt : AnyTransform<'T>) (rt : AnyTransform<'T>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       let lr = invoke lt o c r
       if isGood lr.ErrorTree then
         lr
@@ -509,19 +535,19 @@ module AnyTransform =
         else
           result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
-  let inline akeepLeft (lt : AnyTransform<'T>) (rt : AnyTransform<_>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tkeepLeft (lt : AnyTransform<'T>) (rt : AnyTransform<_>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       let lr = invoke lt o c r
       let rr = invoke rt o c r
       result lr.Value (join lr.ErrorTree rr.ErrorTree)
-  let inline akeepRight (lt : AnyTransform<_>) (rt : AnyTransform<'T>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tkeepRight (lt : AnyTransform<_>) (rt : AnyTransform<'T>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       let lr = invoke lt o c r
       let rr = invoke rt o c r
       result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
-  let inline asuppress (t : AnyTransform<'T>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tsuppress (t : AnyTransform<'T>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       let tr = invoke t o c r
       let e  =
         if isGood tr.ErrorTree then
@@ -530,16 +556,16 @@ module AnyTransform =
           tr.ErrorTree |> supp
       result tr.Value e
 
-  let inline atoMaybe (t : AnyTransform<'T>) : AnyTransform<Maybe<'T>> =
-    atrans <| fun o c r ->
+  let inline ttoMaybe (t : AnyTransform<'T>) : AnyTransform<Maybe<'T>> =
+    ttrans <| fun o c r ->
       let tr = invoke t o c r
       if isGood tr.ErrorTree then
         good (Just tr.Value)
       else
         good Nothing
 
-  let inline atoOption (t : AnyTransform<'T>) : AnyTransform<'T option> =
-    atrans <| fun o c r ->
+  let inline ttoOption (t : AnyTransform<'T>) : AnyTransform<'T option> =
+    ttrans <| fun o c r ->
       let tr = invoke t o c r
       if isGood tr.ErrorTree then
         good (Some tr.Value)
@@ -547,8 +573,8 @@ module AnyTransform =
         good None
 
 #if !FSHARP_41
-  let inline atoResult (t : AnyTransform<'T>) : AnyTransform<Result<'T, AnyErrorItem []>> =
-    atrans <| fun o c r ->
+  let inline ttoResult (t : AnyTransform<'T>) : AnyTransform<Result<'T, AnyErrorItem []>> =
+    ttrans <| fun o c r ->
       let tr = invoke t o c r
       if isGood tr.ErrorTree then
         good (Ok tr.Value)
@@ -556,8 +582,8 @@ module AnyTransform =
         good (Error (collapse tr.ErrorTree))
 #endif
 
-  let inline aunpack (ok : 'T -> AnyTransform<'U>) (bad : AnyErrorItem [] -> AnyTransform<'U>) (t : AnyTransform<'T>) =
-    atrans <| fun o c r ->
+  let inline tunpack (ok : 'T -> AnyTransform<'U>) (bad : AnyErrorItem [] -> AnyTransform<'U>) (t : AnyTransform<'T>) =
+    ttrans <| fun o c r ->
       let tr = invoke t o c r
       if isGood tr.ErrorTree then
         let tok = ok tr.Value
@@ -568,27 +594,27 @@ module AnyTransform =
 
   // Failures
 
-  let inline afailure v msg : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tfailure v msg : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       result v (msg |> AnyError.Message |> leaf c)
 
-  let inline afailuref v fmt = kprintf (afailure v) fmt
+  let inline tfailuref v fmt = kprintf (tfailure v) fmt
 
-  let inline awarning v msg : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline twarning v msg : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       result v (msg |> AnyError.Message |> leaf c |> supp)
 
-  let inline awarningf v fmt = kprintf (awarning v) fmt
+  let inline twarningf v fmt = kprintf (twarning v) fmt
 
   // Misc
 
-  let inline awithContext name (t : AnyTransform<'T>) : AnyTransform<'T> =
-    atrans <| fun o (AnyContext p) r ->
+  let inline twithContext name (t : AnyTransform<'T>) : AnyTransform<'T> =
+    ttrans <| fun o (AnyContext p) r ->
       let nc = (AnyContextElement.Named name)::p |> AnyContext
       invoke t o nc r
 
-  let inline adebug name (t : AnyTransform<'T>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tdebug name (t : AnyTransform<'T>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       printfn "BEFORE  %s: %A(%A)" name o c
       let tr = invoke t o c r
       if isGood tr.ErrorTree then
@@ -597,14 +623,14 @@ module AnyTransform =
         printfn "FAILURE %s: %A(%A)" name tr.Value tr.ErrorTree
       tr
 
-  let arun (t : AnyTransform<'T>) (root : obj) (repo : AnyAdapterRepository): 'T*AnyErrorItem [] =
+  let trun (t : AnyTransform<'T>) (root : obj) (repo : AnyAdapterRepository): 'T*AnyErrorItem [] =
     let tr = invoke t root ([] |> AnyContext) repo
     tr.Value, collapse tr.ErrorTree
 
   // Extractors
 
-  let aextract (tm : TypeMapper.TypeMapper<'T>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline textract (tm : TypeMapper.TypeMapper<'T>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       let mv =
         match o with
         | null                    -> Nothing
@@ -627,21 +653,21 @@ module AnyTransform =
       | Just v  -> v |> good
       | Nothing -> result tm.Zero (AnyError.CanNotConvertTo (o, getType o, typeof<'T>)|> leaf c)
 
-  let aasByte    = aextract TypeMapper.tm_byte
-  let aasChar    = aextract TypeMapper.tm_char
-  let aasDecimal = aextract TypeMapper.tm_decimal
-  let aasFloat   = aextract TypeMapper.tm_float
-  let aasFloat32 = aextract TypeMapper.tm_float32
-  let aasInt16   = aextract TypeMapper.tm_int16
-  let aasInt32   = aextract TypeMapper.tm_int32
-  let aasInt64   = aextract TypeMapper.tm_int64
-  let aasSByte   = aextract TypeMapper.tm_sbyte
-  let aasUInt16  = aextract TypeMapper.tm_uint16
-  let aasUInt32  = aextract TypeMapper.tm_uint32
-  let aasUInt64  = aextract TypeMapper.tm_uint64
+  let tasByte    = textract TypeMapper.tm_byte
+  let tasChar    = textract TypeMapper.tm_char
+  let tasDecimal = textract TypeMapper.tm_decimal
+  let tasFloat   = textract TypeMapper.tm_float
+  let tasFloat32 = textract TypeMapper.tm_float32
+  let tasInt16   = textract TypeMapper.tm_int16
+  let tasInt32   = textract TypeMapper.tm_int32
+  let tasInt64   = textract TypeMapper.tm_int64
+  let tasSByte   = textract TypeMapper.tm_sbyte
+  let tasUInt16  = textract TypeMapper.tm_uint16
+  let tasUInt32  = textract TypeMapper.tm_uint32
+  let tasUInt64  = textract TypeMapper.tm_uint64
 
-  let aasString : AnyTransform<string> =
-    atrans <| fun o c r ->
+  let tasString : AnyTransform<string> =
+    ttrans <| fun o c r ->
       match o with
       | (:? string as v)        -> v                                |> good
       | (:? IFormattable as f)  -> f.ToString ("", defaultCulture)  |> good
@@ -649,8 +675,8 @@ module AnyTransform =
 
   // Queries
 
-  let inline aindex idx v (t : AnyTransform<'T>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tindex idx v (t : AnyTransform<'T>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       match r.Indexer o with
       | Just indexer  ->
         let (AnyContext p)        = c
@@ -664,21 +690,20 @@ module AnyTransform =
       | Nothing       ->
           result v (o |> getType |> AnyError.NotIndexable |> leaf c)
 
-  let inline aindexz idx t =
-    aindex idx (zero ()) t
+  let inline tindexz idx t = tindex idx (zero ()) t
 
-  let inline amany (t : AnyTransform<'T>) : AnyTransform<'T []> =
-    atrans <| fun o c r ->
+  let inline tmany (t : AnyTransform<'T>) : AnyTransform<'T []> =
+    ttrans <| fun o c r ->
       let ra = ResizeArray defaultSize
       match r.Iterator o with
       | Just iterator ->
-        let et = Loops.amany t c r ra iterator empty 0
+        let et = Loops.tmany t c r ra iterator empty 0
         result (ra.ToArray ()) et
       | Nothing ->
         result [||] (o |> getType |> AnyError.NotIterable |> leaf c)
 
-  let inline amember name v (t : AnyTransform<'T>) : AnyTransform<'T> =
-    atrans <| fun o c r ->
+  let inline tmember name v (t : AnyTransform<'T>) : AnyTransform<'T> =
+    ttrans <| fun o c r ->
       match r.Lookup o with
       | Just lookup ->
         let (AnyContext p)      = c
@@ -692,26 +717,25 @@ module AnyTransform =
       | Nothing     ->
           result v (o |> getType |> AnyError.NotLookupable |> leaf c)
 
-  let inline amemberz name t =
-    amember name (zero ()) t
+  let inline tmemberz name t = tmember name (zero ()) t
 
   type AnyBuilder () =
-    member inline x.Bind        (t, uf) = abind       t uf
-    member inline x.Combine     (t, u)  = akeepRight  t u
-    member inline x.Return      v       = areturn     v
+    member inline x.Bind        (t, uf) = tbind       t uf
+    member inline x.Combine     (t, u)  = tkeepRight  t u
+    member inline x.Return      v       = treturn     v
     member inline x.ReturnFrom  t       = t                     : AnyTransform<'T>
-    member inline x.Zero        ()      = areturn     (zero ())
+    member inline x.Zero        ()      = treturn     (zero ())
 
 type AnyTransform<'T> with
-  static member inline (>>=) (t , uf) = AnyTransform.abind      t uf
-  static member inline (<*>) (tf, u)  = AnyTransform.aapply    tf u
-  static member inline (|>>) (t , m)  = AnyTransform.amap       m t
-  static member inline (<&>) (l , r)  = AnyTransform.aand       l r
-  static member inline (<|>) (l , r)  = AnyTransform.aor        l r
-  static member inline (.>>) (l , r)  = AnyTransform.akeepLeft  l r
-  static member inline (>>.) (l , r)  = AnyTransform.akeepRight l r
+  static member inline (>>=) (t , uf) = AnyTransform.tbind      t uf
+  static member inline (<*>) (tf, u)  = AnyTransform.tapply    tf u
+  static member inline (|>>) (t , m)  = AnyTransform.tmap       m t
+  static member inline (<&>) (l , r)  = AnyTransform.tand       l r
+  static member inline (<|>) (l , r)  = AnyTransform.tor        l r
+  static member inline (.>>) (l , r)  = AnyTransform.tkeepLeft  l r
+  static member inline (>>.) (l , r)  = AnyTransform.tkeepRight l r
 
 type AnyTransformKleisli<'T, 'U> with
-  static member inline (>=>) (tf, uf) = AnyTransform.akleisli tf uf
+  static member inline (>=>) (tf, uf) = AnyTransform.tkleisli tf uf
 
 let anyTransform = AnyTransform.AnyBuilder ()

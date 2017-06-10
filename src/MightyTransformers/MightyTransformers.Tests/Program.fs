@@ -159,24 +159,24 @@ module AnyTransformerTest =
         |]
       |]
 
-    let akind kind =
-      amember "kind" ()
-        (aasString >>= fun v -> if v = kind then areturn () else afailuref () "Expected kind '%s' but found '%s'" kind v)
+    let tkind kind =
+      tmember "kind" ()
+        (tasString >>= fun v -> if v = kind then treturn () else tfailuref () "Expected kind '%s' but found '%s'" kind v)
 
-    let astr k      = amember k "" aasString
-    let atitle      = astr "title"
-    let abook       = akind "book"        >>. atitle |>> Book
-    let amanuscript = akind "manuscript"  >>. atitle |>> Manuscript
-    let awork       = abook <|> amanuscript
-    let aworks      = amember "works" [||] (amany awork) |> asuppress
-    let aauthor     =
-      (astr "name") <&> (astr "surname")
+    let tstr k      = tmember k "" tasString
+    let ttitle      = tstr "title"
+    let tbook       = tkind "book"        >>. ttitle |>> Book
+    let tmanuscript = tkind "manuscript"  >>. ttitle |>> Manuscript
+    let twork       = tbook <|> tmanuscript
+    let tworks      = tmember "works" [||] (tmany twork) |> tsuppress
+    let tauthor     =
+      (tstr "name") <&> (tstr "surname")
       >>= fun (name, surname) ->
-        apure (Author.New name surname)
-        <*> (amemberz "birth" aasInt32 |> atoOption)
-        <*> aworks
-        |> awithContext (sprintf "%s %s" name surname)
-    let aauthors    = amany aauthor
+        tpure (Author.New name surname)
+        <*> (tmemberz "birth" tasInt32 |> ttoOption)
+        <*> tworks
+        |> twithContext (sprintf "%s %s" name surname)
+    let tauthors    = tmany tauthor
 
     let adapterRepo =
       let adapterRepo = AnyAdapterRepository ()
@@ -186,7 +186,7 @@ module AnyTransformerTest =
       adapterRepo.AddIterator AnyAdapter.arrayIterator<obj>
       adapterRepo
 
-    let a = arun aauthors authors adapterRepo
+    let a = trun tauthors authors adapterRepo
     let e =
       [|
         Author.New
