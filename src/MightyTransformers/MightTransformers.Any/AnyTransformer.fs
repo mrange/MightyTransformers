@@ -111,11 +111,14 @@ open System.Globalization
 
 type IAnyTree =
   interface
-    abstract Value    : Maybe<obj>
-    abstract Type     : Type
-    abstract Index    : int     -> Maybe<IAnyTree>
-    abstract Lookup   : string  -> Maybe<IAnyTree>
-    abstract Iterator : unit    -> Maybe<LazyList<IAnyTree>>
+    abstract CanIndex   : bool
+    abstract CanLookup  : bool
+    abstract CanIterate : bool
+    abstract Value      : Maybe<obj>
+    abstract Type       : Type
+    abstract Index      : int     -> Maybe<IAnyTree>
+    abstract Lookup     : string  -> Maybe<IAnyTree>
+    abstract Iterator   : unit    -> LazyList<IAnyTree>
   end
 
 module AnyTree =
@@ -124,24 +127,33 @@ module AnyTree =
       match o with
       | null                      ->
         { new IAnyTree with
+          member x.CanIndex       = false
+          member x.CanLookup      = false
+          member x.CanIterate     = false
           member x.Value          = Nothing
           member x.Type           = typeof<Void>
           member x.Index    idx   = Nothing
           member x.Lookup   name  = Nothing
-          member x.Iterator ()    = Nothing
+          member x.Iterator ()    = LazyList.lempty
         }
       | :? Map<string, obj> as v  -> adaptMap v
       | :? (obj []) as v          -> adaptArray v
       | _                         ->
         { new IAnyTree with
+          member x.CanIndex       = false
+          member x.CanLookup      = false
+          member x.CanIterate     = false
           member x.Value          = Just o
           member x.Type           = o.GetType ()
           member x.Index    idx   = Nothing
           member x.Lookup   name  = Nothing
-          member x.Iterator ()    = Nothing
+          member x.Iterator ()    = LazyList.lempty
         }
     and internal adaptMap (m : Map<string, obj>) : IAnyTree =
       { new IAnyTree with
+        member x.CanIndex       = false
+        member x.CanLookup      = true
+        member x.CanIterate     = true
         member x.Value          = Nothing
         member x.Type           = typeof<Map<string, obj>>
         member x.Index    idx   = Nothing
@@ -149,10 +161,13 @@ module AnyTree =
           match m.TryFind name with
           | Some v  -> Just (adaptObj v)
           | None    -> Nothing
-        member x.Iterator ()    = Just (m |> Seq.map (fun kv -> adaptObj kv.Value) |> Seq.toArray |> LazyList.lfromArray)
+        member x.Iterator ()    = m |> Seq.map (fun kv -> adaptObj kv.Value) |> Seq.toArray |> LazyList.lfromArray
       }
     and internal adaptArray (a : obj []) : IAnyTree =
       { new IAnyTree with
+        member x.CanIndex       = true
+        member x.CanLookup      = false
+        member x.CanIterate     = true
         member x.Value          = Nothing
         member x.Type           = typeof<obj []>
         member x.Index    idx   =
@@ -161,7 +176,7 @@ module AnyTree =
           else
             Nothing
         member x.Lookup   name  = Nothing
-        member x.Iterator ()    = Just (a |> Array.map adaptObj |> LazyList.lfromArray)
+        member x.Iterator ()    = a |> Array.map adaptObj |> LazyList.lfromArray
       }
 
 [<RequireQualifiedAccess>]
@@ -178,9 +193,8 @@ type AnyError =
   | IndexOutOfRange of int
   | MemberNotFound  of string
   | NoValue         of Type
-  // TODO: Reintroduce these
-  //| NotIndexable    of Type
-  //| NotLookupable   of Type
+  | NotIndexable    of Type
+  | NotLookupable   of Type
   | NotIterable     of Type
   | Message         of string
 
@@ -602,36 +616,39 @@ module AnyTransform =
 
   let inline tindex idx v (t : AnyTransform<'T>) : AnyTransform<'T> =
     ttrans <| fun at c ->
-      match at.Index idx with
-      | Just v  ->
-        let (AnyContext p) = c
-        let ic = (AnyContextElement.Index idx)::p |> AnyContext
-        invoke t v ic
-      | Nothing     ->
+      if at.CanIndex then
+        match at.Index idx with
+        | Just v  ->
+          let (AnyContext p) = c
+          let ic = (AnyContextElement.Index idx)::p |> AnyContext
+          invoke t v ic
+        | Nothing     ->
+          result v (at.Type |> AnyError.NotIndexable |> leaf c)
+      else
         result v (idx |> AnyError.IndexOutOfRange |> leaf c)
-
   let inline tindexz idx t = tindex idx (zero ()) t
 
   let inline tmany (t : AnyTransform<'T>) : AnyTransform<'T []> =
     ttrans <| fun at c ->
       let ra = ResizeArray defaultSize
-      match at.Iterator () with
-      | Just iterator ->
-        let et = Loops.tmany t c ra iterator empty 0
+      if at.CanIterate then
+        let et = Loops.tmany t c ra (at.Iterator ()) empty 0
         result (ra.ToArray ()) et
-      | Nothing ->
+      else
         result [||] (at.Type |> AnyError.NotIterable |> leaf c)
 
   let inline tmember name v (t : AnyTransform<'T>) : AnyTransform<'T> =
     ttrans <| fun at c ->
-      match at.Lookup name with
-      | Just v    ->
-        let (AnyContext p) = c
-        let ic = (AnyContextElement.Member name)::p |> AnyContext
-        invoke t v ic
-      | Nothing   ->
-        result v (name |> AnyError.MemberNotFound |> leaf c)
-
+      if at.CanLookup then
+        match at.Lookup name with
+        | Just v    ->
+          let (AnyContext p) = c
+          let ic = (AnyContextElement.Member name)::p |> AnyContext
+          invoke t v ic
+        | Nothing   ->
+          result v (name |> AnyError.MemberNotFound |> leaf c)
+      else
+        result v (at.Type |> AnyError.NotLookupable |> leaf c)
   let inline tmemberz name t = tmember name (zero ()) t
 
   type AnyBuilder () =
