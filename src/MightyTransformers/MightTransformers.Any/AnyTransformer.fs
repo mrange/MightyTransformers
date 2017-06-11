@@ -89,19 +89,36 @@ type MaybeKleisli<'T, 'U> with
 let maybe = Maybe.MaybeBuilder ()
 
 [<Struct>]
-[<NoEquality>]
-[<NoComparison>]
-type AnyIndexer<'T>   = AnyIndexer  of (int     -> Maybe<'T>)
+type LazyList<'T> =
+  | LazyEmpty
+  | LazyCons of 'T*(unit -> LazyList<'T>)
+
+module LazyList =
+  let lempty = LazyEmpty
+  let inline lcons v ll = LazyCons (v, ll)
 
 [<Struct>]
 [<NoEquality>]
 [<NoComparison>]
-type AnyLookup<'T>    = AnyLookup   of (string  -> Maybe<'T>)
+type AnyIndexer       = AnyIndexer  of (int     -> Maybe<obj>)
 
 [<Struct>]
 [<NoEquality>]
 [<NoComparison>]
-type AnyIterator<'T>  = AnyIterator of (unit    -> Maybe<'T>)
+type AnyLookup        = AnyLookup   of (string  -> Maybe<obj>)
+
+[<Struct>]
+[<NoEquality>]
+[<NoComparison>]
+type AnyIterator      = AnyIterator of (unit    -> Maybe<obj>)
+
+type ITree =
+  interface
+    abstract Value    : Maybe<obj>
+    abstract Index    : int     -> Maybe<ITree>
+    abstract Lookup   : string  -> Maybe<ITree>
+    abstract Iterator : unit    -> LazyList<ITree>
+  end
 
 open System
 open System.Collections.Generic
@@ -117,6 +134,20 @@ type AnyAdapter     = AnyAdapter    of (obj -> obj)
 [<NoComparison>]
 type AnyAdapterGen  = AnyAdapterGen of (obj -> Maybe<AnyAdapter>)
 
+module Details =
+  type Dictionary<'K, 'V> with
+    member x.TryFind (k : 'K) : Maybe<'V> =
+      match x.TryGetValue k with
+      | true  , v -> Just v
+      | false , _ -> Nothing
+
+    member x.Get (k : 'K) (dv : 'V) : 'V =
+      match x.TryGetValue k with
+      | true  , v -> v
+      | false , _ -> dv
+
+open Details
+
 [<NoEquality>]
 [<NoComparison>]
 type AnyAdapterRepository() =
@@ -128,24 +159,42 @@ type AnyAdapterRepository() =
   let lookups       = Dictionary<Type, AnyAdapter> ()
   let iterators     = Dictionary<Type, AnyAdapter> ()
 
+  let objType       = typeof<obj>
+
+  let rec typeChain (t : Type) : Type list =
+    if t <> null then
+      let btc = typeChain t.BaseType
+      let ifs = t.GetInterfaces () |> Array.map typeChain
+      t::(Array.fold (fun s t -> t@s) btc ifs)
+    else
+      []
+
+  let rec lookupLoop (fs : Dictionary<Type, AnyAdapter>) (o : obj) (t : Type) : Maybe<'T> =
+    if t <> null && t <> typeof<obj> then
+      match fs.TryGetValue t with
+      | true  , (AnyAdapter f)  -> f o :?> 'T |> Just
+      | false , _               -> 
+        lookupLoop fs o t.BaseType
+    else
+      Nothing
+
   let lookup (fs : Dictionary<Type, AnyAdapter>) (gs : ResizeArray<AnyAdapterGen>) (o : obj) : Maybe<'T> =
     if o <> null then
       let t = o.GetType ()
-      match fs.TryGetValue t with
-      | true  , (AnyAdapter f)  -> f o :?> 'T |> Just
-      | false , _               ->
-        let rec loop i =
-          if i < gs.Count then
-            let (AnyAdapterGen g) = gs.[i]
-            match g o with
-            | Just f ->
-              fs.[t] <- f
-              let (AnyAdapter f) = f
-              f o :?> 'T |> Just
-            | Nothing -> loop (i + 1)
-          else
-            Nothing
-        loop 0
+      match fs.TryFind t with
+      | Just (AnyAdapter f) -> f o :?> 'T |> Just
+      | Nothing             ->
+        let tc = typeChain t |> List.distinct
+        let picker t =
+          match fs.TryFind t with
+          | Just aa -> Some aa
+          | Nothing -> None
+        match tc |> List.tryPick picker with
+        | Some aa ->
+          fs.[t] <- aa
+          let (AnyAdapter f) = aa
+          f o :?> 'T |> Just
+        | _       -> Nothing
     else
       Nothing
 
@@ -154,33 +203,33 @@ type AnyAdapterRepository() =
 
   let adapt f = (fun (o : obj)-> f (o :?> 'T) :> obj) |> AnyAdapter
 
-  member x.Indexer<'T>    (o : obj) : Maybe<AnyIndexer<'T>>     = lookup indexers  indexerGens  o
-  member x.Lookup<'T>     (o : obj) : Maybe<AnyLookup<'T>>      = lookup lookups   lookupGens   o
-  member x.Iterator<'T>   (o : obj) : Maybe<AnyIterator<'T>>    = lookup iterators iteratorGens o
+  member x.Indexer<'T>    (o : obj) : Maybe<AnyIndexer>   = lookup indexers  indexerGens  o
+  member x.Lookup<'T>     (o : obj) : Maybe<AnyLookup>    = lookup lookups   lookupGens   o
+  member x.Iterator<'T>   (o : obj) : Maybe<AnyIterator>  = lookup iterators iteratorGens o
 
   //member x.AddIndexer     (t : Type) (f : obj -> obj) : unit    = add indexers  t f
   //member x.AddLookup      (t : Type) (f : obj -> obj) : unit    = add lookups   t f
   //member x.AddIterator    (t : Type) (f : obj -> obj) : unit    = add iterators t f
 
-  member x.AddIndexer<'T, 'U>   (f : 'T -> AnyIndexer<'U>)      = add indexers  typeof<'T> (adapt f)
-  member x.AddLookup<'T, 'U>    (f : 'T -> AnyLookup<'U>)       = add lookups   typeof<'T> (adapt f)
-  member x.AddIterator<'T, 'U>  (f : 'T -> AnyIterator<'U>)     = add iterators typeof<'T> (adapt f)
+  member x.AddIndexer<'T, 'U>   (f : 'T -> AnyIndexer)  = add indexers  typeof<'T> (adapt f)
+  member x.AddLookup<'T, 'U>    (f : 'T -> AnyLookup)   = add lookups   typeof<'T> (adapt f)
+  member x.AddIterator<'T, 'U>  (f : 'T -> AnyIterator) = add iterators typeof<'T> (adapt f)
 
   member x.AddIndexerGen  (g : AnyAdapterGen) : unit = addGen indexerGens  g
   member x.AddLookupGen   (g : AnyAdapterGen) : unit = addGen lookupGens   g
   member x.AddIteratorGen (g : AnyAdapterGen) : unit = addGen iteratorGens g
 
 module AnyAdapter =
-  let mapEnumerableIterator m (e : IEnumerable<'T>) : AnyIterator<'U> =
+  let mapEnumerableIterator m (e : IEnumerable<'T>) : AnyIterator =
     let e = e.GetEnumerator ()
     AnyIterator <| fun () ->
       if e.MoveNext () then
-        Just (m e.Current)
+        e.Current |> m |> box |> Just
       else
         e.Dispose ()
         Nothing
 
-  let mapEnumerableIndexer m (e : IEnumerable<'T>) : AnyIndexer<'U> =
+  let mapEnumerableIndexer m (e : IEnumerable<'T>) : AnyIndexer =
     AnyIndexer <| fun i ->
       let e = e.GetEnumerator ()
       let rec loop r =
@@ -190,7 +239,7 @@ module AnyAdapter =
           else
             Nothing
         else
-          Just (m e.Current)
+          e.Current |> m |> box |> Just
       try
         if e.MoveNext () then
           loop i
@@ -199,31 +248,31 @@ module AnyAdapter =
       finally
         e.Dispose ()
 
-  let arrayIterator (a : 'T []) : AnyIterator<'T> =
+  let arrayIterator (a : 'T []) : AnyIterator =
     let mutable i = 0
     AnyIterator <| fun () ->
       if i < a.Length then
-        let v = Just a.[i]
+        let v = a.[i] |> box |> Just
         i <- i + 1
         v
       else
         Nothing
 
-  let arrayIndexer (a : 'T []) : AnyIndexer<'T> =
+  let arrayIndexer (a : 'T []) : AnyIndexer =
     AnyIndexer <| fun i ->
       if i < a.Length then
-        Just a.[i]
+        a.[i] |> box |> Just
       else
         Nothing
 
-  let enumerableIndexer  e = mapEnumerableIndexer   id e
+  let enumerableIndexer  e = mapEnumerableIndexer  id e
 
-  let enumerableIterator e = mapEnumerableIterator  id e
+  let enumerableIterator e = mapEnumerableIterator id e
 
-  let mapLookup (m : Map<string, 'T>) : AnyLookup<'T> =
+  let mapLookup (m : Map<string, 'T>) : AnyLookup =
     AnyLookup <| fun name ->
       match m |> Map.tryFind name with
-      | Some v  -> v |> Just
+      | Some v  -> v |> box |> Just
       | None    -> Nothing
 
   let mapIindexer (m : Map<string, 'T>) = mapEnumerableIterator  (fun (kv : KeyValuePair<_, _>) -> kv.Value) m
