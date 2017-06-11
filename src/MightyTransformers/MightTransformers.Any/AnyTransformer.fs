@@ -97,201 +97,72 @@ module LazyList =
   let lempty = LazyEmpty
   let inline lcons v ll = LazyCons (v, ll)
 
-[<Struct>]
-[<NoEquality>]
-[<NoComparison>]
-type AnyIndexer       = AnyIndexer  of (int     -> Maybe<obj>)
+  let rec lfromArrayi i (s : 'T []) : LazyList<'T> =
+    if s.Length > i && i >= 0 then
+      LazyCons (s.[i], fun () -> lfromArrayi (i + 1) s)
+    else
+      LazyEmpty
 
-[<Struct>]
-[<NoEquality>]
-[<NoComparison>]
-type AnyLookup        = AnyLookup   of (string  -> Maybe<obj>)
-
-[<Struct>]
-[<NoEquality>]
-[<NoComparison>]
-type AnyIterator      = AnyIterator of (unit    -> Maybe<obj>)
-
-type ITree =
-  interface
-    abstract Value    : Maybe<obj>
-    abstract Index    : int     -> Maybe<ITree>
-    abstract Lookup   : string  -> Maybe<ITree>
-    abstract Iterator : unit    -> LazyList<ITree>
-  end
+  let lfromArray s = lfromArrayi 0 s
 
 open System
 open System.Collections.Generic
 open System.Globalization
 
-[<Struct>]
-[<NoEquality>]
-[<NoComparison>]
-type AnyAdapter     = AnyAdapter    of (obj -> obj)
+type IAnyTree =
+  interface
+    abstract Value    : Maybe<obj>
+    abstract Type     : Type
+    abstract Index    : int     -> Maybe<IAnyTree>
+    abstract Lookup   : string  -> Maybe<IAnyTree>
+    abstract Iterator : unit    -> Maybe<LazyList<IAnyTree>>
+  end
 
-[<Struct>]
-[<NoEquality>]
-[<NoComparison>]
-type AnyAdapterGen  = AnyAdapterGen of (obj -> Maybe<AnyAdapter>)
-
-module Details =
-  type Dictionary<'K, 'V> with
-    member x.TryFind (k : 'K) : Maybe<'V> =
-      match x.TryGetValue k with
-      | true  , v -> Just v
-      | false , _ -> Nothing
-
-    member x.Get (k : 'K) (dv : 'V) : 'V =
-      match x.TryGetValue k with
-      | true  , v -> v
-      | false , _ -> dv
-
-open Details
-
-[<NoEquality>]
-[<NoComparison>]
-type AnyAdapterRepository() =
-  let indexerGens   = ResizeArray<AnyAdapterGen> 16
-  let lookupGens    = ResizeArray<AnyAdapterGen> 16
-  let iteratorGens  = ResizeArray<AnyAdapterGen> 16
-
-  let indexers      = Dictionary<Type, AnyAdapter> ()
-  let lookups       = Dictionary<Type, AnyAdapter> ()
-  let iterators     = Dictionary<Type, AnyAdapter> ()
-
-  let objType       = typeof<obj>
-
-  let rec typeChain (t : Type) : Type list =
-    if t <> null then
-      let btc = typeChain t.BaseType
-      let ifs = t.GetInterfaces () |> Array.map typeChain
-      t::(Array.fold (fun s t -> t@s) btc ifs)
-    else
-      []
-
-  let rec lookupLoop (fs : Dictionary<Type, AnyAdapter>) (o : obj) (t : Type) : Maybe<'T> =
-    if t <> null && t <> typeof<obj> then
-      match fs.TryGetValue t with
-      | true  , (AnyAdapter f)  -> f o :?> 'T |> Just
-      | false , _               -> 
-        lookupLoop fs o t.BaseType
-    else
-      Nothing
-
-  let lookup (fs : Dictionary<Type, AnyAdapter>) (gs : ResizeArray<AnyAdapterGen>) (o : obj) : Maybe<'T> =
-    if o <> null then
-      let t = o.GetType ()
-      match fs.TryFind t with
-      | Just (AnyAdapter f) -> f o :?> 'T |> Just
-      | Nothing             ->
-        let tc = typeChain t |> List.distinct
-        let picker t =
-          match fs.TryFind t with
-          | Just aa -> Some aa
-          | Nothing -> None
-        match tc |> List.tryPick picker with
-        | Some aa ->
-          fs.[t] <- aa
-          let (AnyAdapter f) = aa
-          f o :?> 'T |> Just
-        | _       -> Nothing
-    else
-      Nothing
-
-  let add     (fs : Dictionary<Type, AnyAdapter>) t f = fs.[t] <- f
-  let addGen  (gs : ResizeArray<AnyAdapterGen>)   g   = gs.Add g
-
-  let adapt f = (fun (o : obj)-> f (o :?> 'T) :> obj) |> AnyAdapter
-
-  member x.Indexer<'T>    (o : obj) : Maybe<AnyIndexer>   = lookup indexers  indexerGens  o
-  member x.Lookup<'T>     (o : obj) : Maybe<AnyLookup>    = lookup lookups   lookupGens   o
-  member x.Iterator<'T>   (o : obj) : Maybe<AnyIterator>  = lookup iterators iteratorGens o
-
-  //member x.AddIndexer     (t : Type) (f : obj -> obj) : unit    = add indexers  t f
-  //member x.AddLookup      (t : Type) (f : obj -> obj) : unit    = add lookups   t f
-  //member x.AddIterator    (t : Type) (f : obj -> obj) : unit    = add iterators t f
-
-  member x.AddIndexer<'T, 'U>   (f : 'T -> AnyIndexer)  = add indexers  typeof<'T> (adapt f)
-  member x.AddLookup<'T, 'U>    (f : 'T -> AnyLookup)   = add lookups   typeof<'T> (adapt f)
-  member x.AddIterator<'T, 'U>  (f : 'T -> AnyIterator) = add iterators typeof<'T> (adapt f)
-
-  member x.AddIndexerGen  (g : AnyAdapterGen) : unit = addGen indexerGens  g
-  member x.AddLookupGen   (g : AnyAdapterGen) : unit = addGen lookupGens   g
-  member x.AddIteratorGen (g : AnyAdapterGen) : unit = addGen iteratorGens g
-
-module AnyAdapter =
-  let mapEnumerableIterator m (e : IEnumerable<'T>) : AnyIterator =
-    let e = e.GetEnumerator ()
-    AnyIterator <| fun () ->
-      if e.MoveNext () then
-        e.Current |> m |> box |> Just
-      else
-        e.Dispose ()
-        Nothing
-
-  let mapEnumerableIndexer m (e : IEnumerable<'T>) : AnyIndexer =
-    AnyIndexer <| fun i ->
-      let e = e.GetEnumerator ()
-      let rec loop r =
-        if r > 0 then
-          if e.MoveNext () then
-            loop (r - 1)
+module AnyTree =
+  module Adapter =
+    let rec adaptObj (o : obj): IAnyTree =
+      match o with
+      | null                      ->
+        { new IAnyTree with
+          member x.Value          = Nothing
+          member x.Type           = typeof<Void>
+          member x.Index    idx   = Nothing
+          member x.Lookup   name  = Nothing
+          member x.Iterator ()    = Nothing
+        }
+      | :? Map<string, obj> as v  -> adaptMap v
+      | :? (obj []) as v          -> adaptArray v
+      | _                         ->
+        { new IAnyTree with
+          member x.Value          = Just o
+          member x.Type           = o.GetType ()
+          member x.Index    idx   = Nothing
+          member x.Lookup   name  = Nothing
+          member x.Iterator ()    = Nothing
+        }
+    and internal adaptMap (m : Map<string, obj>) : IAnyTree =
+      { new IAnyTree with
+        member x.Value          = Nothing
+        member x.Type           = typeof<Map<string, obj>>
+        member x.Index    idx   = Nothing
+        member x.Lookup   name  =
+          match m.TryFind name with
+          | Some v  -> Just (adaptObj v)
+          | None    -> Nothing
+        member x.Iterator ()    = Just (m |> Seq.map (fun kv -> adaptObj kv.Value) |> Seq.toArray |> LazyList.lfromArray)
+      }
+    and internal adaptArray (a : obj []) : IAnyTree =
+      { new IAnyTree with
+        member x.Value          = Nothing
+        member x.Type           = typeof<obj []>
+        member x.Index    idx   =
+          if idx < a.Length && idx >= 0 then
+            Just (adaptObj a.[idx])
           else
             Nothing
-        else
-          e.Current |> m |> box |> Just
-      try
-        if e.MoveNext () then
-          loop i
-        else
-          Nothing
-      finally
-        e.Dispose ()
-
-  let arrayIterator (a : 'T []) : AnyIterator =
-    let mutable i = 0
-    AnyIterator <| fun () ->
-      if i < a.Length then
-        let v = a.[i] |> box |> Just
-        i <- i + 1
-        v
-      else
-        Nothing
-
-  let arrayIndexer (a : 'T []) : AnyIndexer =
-    AnyIndexer <| fun i ->
-      if i < a.Length then
-        a.[i] |> box |> Just
-      else
-        Nothing
-
-  let enumerableIndexer  e = mapEnumerableIndexer  id e
-
-  let enumerableIterator e = mapEnumerableIterator id e
-
-  let mapLookup (m : Map<string, 'T>) : AnyLookup =
-    AnyLookup <| fun name ->
-      match m |> Map.tryFind name with
-      | Some v  -> v |> box |> Just
-      | None    -> Nothing
-
-  let mapIindexer (m : Map<string, 'T>) = mapEnumerableIterator  (fun (kv : KeyValuePair<_, _>) -> kv.Value) m
-
-  let mapIterator (m : Map<string, 'T>) = mapEnumerableIterator  (fun (kv : KeyValuePair<_, _>) -> kv.Value) m
-
-(*
-  let mapLookupGen : AnyAdapterGen =
-    let genMap = typeof<Map<_, _>>.GetGenericTypeDefinition ()
-    AnyAdapterGen <| fun o ->
-      if o <> null then
-        let t   = o.GetType ()
-        if t.IsGenericType && t.GetGenericTypeDefinition () = genMap then
-          Nothing
-        else
-          Nothing
-      else
-        Nothing
-*)
+        member x.Lookup   name  = Nothing
+        member x.Iterator ()    = Just (a |> Array.map adaptObj |> LazyList.lfromArray)
+      }
 
 [<RequireQualifiedAccess>]
 type AnyContextElement =
@@ -306,8 +177,10 @@ type AnyError =
   | CanNotConvertTo of obj*Type*Type
   | IndexOutOfRange of int
   | MemberNotFound  of string
-  | NotIndexable    of Type
-  | NotLookupable   of Type
+  | NoValue         of Type
+  // TODO: Reintroduce these
+  //| NotIndexable    of Type
+  //| NotLookupable   of Type
   | NotIterable     of Type
   | Message         of string
 
@@ -344,7 +217,7 @@ type AnyErrorItem =
 [<NoEquality>]
 [<NoComparison>]
 [<Struct>]
-type AnyTransform<'T> = AnyTransform of OptimizedClosures.FSharpFunc<obj, AnyContext, AnyAdapterRepository, AnyResult<'T>>
+type AnyTransform<'T> = AnyTransform of OptimizedClosures.FSharpFunc<IAnyTree, AnyContext, AnyResult<'T>>
 
 [<NoEquality>]
 [<NoComparison>]
@@ -453,11 +326,9 @@ module AnyTransform =
       let tm_uint32   = let inline m m = doMap uint32  m in TypeMapper<_>.New (uint32  0) asString (parseUInt uint32  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
       let tm_uint64   = let inline m m = doMap uint64  m in TypeMapper<_>.New (uint64  0) asString (parseUInt uint64  ) (m byte) (m char) (m decimal) (m float) (m float32) (m int16) (m int32) (m int64) (m sbyte) (m uint16) (m uint32) (m uint64)
 
-    let inline ttrans f = AnyTransform(OptimizedClosures.FSharpFunc<_, _, _, _>.Adapt f)
+    let inline ttrans f = AnyTransform(OptimizedClosures.FSharpFunc<_, _, _>.Adapt f)
 
     let inline zero ()  = LanguagePrimitives.GenericZero<_>
-
-    let inline getType o= if o <> null then o.GetType () else typeof<Void>
 
     let inline leaf c e = AnyErrorTree.Leaf (c, e)
 
@@ -482,7 +353,7 @@ module AnyTransform =
       | AnyErrorTree.Suppress l , AnyErrorTree.Suppress r -> AnyErrorTree.Fork (l, r) |> AnyErrorTree.Suppress
       | _                       , _                       -> AnyErrorTree.Fork (l, r)
 
-    let inline invoke (AnyTransform f) o c r = f.Invoke (o, c, r)
+    let inline invoke (AnyTransform f) t c = f.Invoke (t, c)
 
     let pathToString (AnyContext p) =
       // Verified that call to private pathToString don't do "funny" stuff
@@ -517,17 +388,16 @@ module AnyTransform =
     let inline good    v    = result v empty
 
     module Loops =
-      let rec tmany t c r (ra : ResizeArray<_>) iterator et i =
+      let rec tmany t c (ra : ResizeArray<_>) lazyList et i =
         let (AnyContext p)        = c
-        let (AnyIterator getter)  = iterator
-        match getter () with
-        | Just v ->
+        match lazyList with
+        | LazyCons (v, ll) ->
           let ic = (AnyContextElement.Index i)::p |> AnyContext
-          let tr = invoke t v ic r
+          let tr = invoke t v ic
           if isGood tr.ErrorTree then
             ra.Add tr.Value
-          tmany t c r ra iterator (join et tr.ErrorTree) (i + 1)
-        | Nothing ->
+          tmany t c ra (ll ()) (join et tr.ErrorTree) (i + 1)
+        | LazyEmpty ->
           et
 
   open Details
@@ -535,13 +405,13 @@ module AnyTransform =
   // Monad
 
   let inline treturn v : AnyTransform<'T> =
-    ttrans <| fun o c r ->
+    ttrans <| fun at c ->
       good v
   let inline tbind (t : AnyTransform<'T>) (uf : 'T -> AnyTransform<'U>) : AnyTransform<'U> =
-    ttrans <| fun o c r->
-      let tr  = invoke t o c r
+    ttrans <| fun at c ->
+      let tr  = invoke t at c
       let u   = uf tr.Value
-      let ur  = invoke u o c r
+      let ur  = invoke u at c
       result ur.Value (join tr.ErrorTree ur.ErrorTree)
 
   // Kleisli
@@ -553,51 +423,51 @@ module AnyTransform =
 
   let inline tpure v = treturn v
   let inline tapply (t : AnyTransform<'U -> 'V>) (u : AnyTransform<'U>) : AnyTransform<'V> =
-    ttrans <| fun o c r ->
-      let tr  = invoke t o c r
-      let ur  = invoke u o c r
+    ttrans <| fun at c ->
+      let tr  = invoke t at c
+      let ur  = invoke u at c
       result (tr.Value ur.Value) (join tr.ErrorTree ur.ErrorTree)
 
   // Functor
 
   let inline tmap m (t : AnyTransform<'T>) : AnyTransform<'U> =
-    ttrans <| fun o c r->
-      let tr = invoke t o c r
+    ttrans <| fun at c ->
+      let tr = invoke t at c
       result (m tr.Value) tr.ErrorTree
 
   // Combinators
 
   let inline tand (lt : AnyTransform<'T>) (rt : AnyTransform<'U>) : AnyTransform<'T*'U> =
-    ttrans <| fun o c r ->
-      let lr = invoke lt o c r
-      let rr = invoke rt o c r
+    ttrans <| fun at c ->
+      let lr = invoke lt at c
+      let rr = invoke rt at c
       result (lr.Value, rr.Value) (join lr.ErrorTree rr.ErrorTree)
   let inline tor (lt : AnyTransform<'T>) (rt : AnyTransform<'T>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      let lr = invoke lt o c r
+    ttrans <| fun at c ->
+      let lr = invoke lt at c
       if isGood lr.ErrorTree then
         lr
       else
-        let rr = invoke rt o c r
+        let rr = invoke rt at c
         if isGood rr.ErrorTree then
           rr
         else
           result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline tkeepLeft (lt : AnyTransform<'T>) (rt : AnyTransform<_>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      let lr = invoke lt o c r
-      let rr = invoke rt o c r
+    ttrans <| fun at c ->
+      let lr = invoke lt at c
+      let rr = invoke rt at c
       result lr.Value (join lr.ErrorTree rr.ErrorTree)
   let inline tkeepRight (lt : AnyTransform<_>) (rt : AnyTransform<'T>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      let lr = invoke lt o c r
-      let rr = invoke rt o c r
+    ttrans <| fun at c ->
+      let lr = invoke lt at c
+      let rr = invoke rt at c
       result rr.Value (join lr.ErrorTree rr.ErrorTree)
 
   let inline tsuppress (t : AnyTransform<'T>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      let tr = invoke t o c r
+    ttrans <| fun at c ->
+      let tr = invoke t at c
       let e  =
         if isGood tr.ErrorTree then
           tr.ErrorTree
@@ -606,16 +476,16 @@ module AnyTransform =
       result tr.Value e
 
   let inline ttoMaybe (t : AnyTransform<'T>) : AnyTransform<Maybe<'T>> =
-    ttrans <| fun o c r ->
-      let tr = invoke t o c r
+    ttrans <| fun at c ->
+      let tr = invoke t at c
       if isGood tr.ErrorTree then
         good (Just tr.Value)
       else
         good Nothing
 
   let inline ttoOption (t : AnyTransform<'T>) : AnyTransform<'T option> =
-    ttrans <| fun o c r ->
-      let tr = invoke t o c r
+    ttrans <| fun at c ->
+      let tr = invoke t at c
       if isGood tr.ErrorTree then
         good (Some tr.Value)
       else
@@ -623,8 +493,8 @@ module AnyTransform =
 
 #if !FSHARP_41
   let inline ttoResult (t : AnyTransform<'T>) : AnyTransform<Result<'T, AnyErrorItem []>> =
-    ttrans <| fun o c r ->
-      let tr = invoke t o c r
+    ttrans <| fun at c ->
+      let tr = invoke t at c
       if isGood tr.ErrorTree then
         good (Ok tr.Value)
       else
@@ -632,25 +502,25 @@ module AnyTransform =
 #endif
 
   let inline tunpack (ok : 'T -> AnyTransform<'U>) (bad : AnyErrorItem [] -> AnyTransform<'U>) (t : AnyTransform<'T>) =
-    ttrans <| fun o c r ->
-      let tr = invoke t o c r
+    ttrans <| fun at c ->
+      let tr = invoke t at c
       if isGood tr.ErrorTree then
         let tok = ok tr.Value
-        invoke tok o c r
+        invoke tok at c
       else
         let tbad = bad (collapse tr.ErrorTree)
-        invoke tbad o c r
+        invoke tbad at c
 
   // Failures
 
   let inline tfailure v msg : AnyTransform<'T> =
-    ttrans <| fun o c r ->
+    ttrans <| fun at c ->
       result v (msg |> AnyError.Message |> leaf c)
 
   let inline tfailuref v fmt = kprintf (tfailure v) fmt
 
   let inline twarning v msg : AnyTransform<'T> =
-    ttrans <| fun o c r ->
+    ttrans <| fun at c ->
       result v (msg |> AnyError.Message |> leaf c |> supp)
 
   let inline twarningf v fmt = kprintf (twarning v) fmt
@@ -658,49 +528,52 @@ module AnyTransform =
   // Misc
 
   let inline twithContext name (t : AnyTransform<'T>) : AnyTransform<'T> =
-    ttrans <| fun o (AnyContext p) r ->
+    ttrans <| fun at (AnyContext p) ->
       let nc = (AnyContextElement.Named name)::p |> AnyContext
-      invoke t o nc r
+      invoke t at nc
 
   let inline tdebug name (t : AnyTransform<'T>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      printfn "BEFORE  %s: %A(%A)" name o c
-      let tr = invoke t o c r
+    ttrans <| fun at c ->
+      printfn "BEFORE  %s: %A(%A)" name at c
+      let tr = invoke t at c
       if isGood tr.ErrorTree then
         printfn "SUCCESS %s: %A(%A)" name tr.Value tr.ErrorTree
       else
         printfn "FAILURE %s: %A(%A)" name tr.Value tr.ErrorTree
       tr
 
-  let trun (t : AnyTransform<'T>) (root : obj) (repo : AnyAdapterRepository): 'T*AnyErrorItem [] =
-    let tr = invoke t root ([] |> AnyContext) repo
+  let trun (t : AnyTransform<'T>) (root : IAnyTree) : 'T*AnyErrorItem [] =
+    let tr = invoke t root ([] |> AnyContext)
     tr.Value, collapse tr.ErrorTree
 
   // Extractors
 
   let inline textract (tm : TypeMapper.TypeMapper<'T>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      let mv =
-        match o with
-        | null                    -> Nothing
-        | (:? string  as v)       -> tm.FromString  v
-        | (:? byte    as v)       -> tm.FromByte    v
-        | (:? char    as v)       -> tm.FromChar    v
-        | (:? decimal as v)       -> tm.FromDecimal v
-        | (:? float   as v)       -> tm.FromFloat   v
-        | (:? float32 as v)       -> tm.FromFloat32 v
-        | (:? int16   as v)       -> tm.FromInt16   v
-        | (:? int32   as v)       -> tm.FromInt32   v
-        | (:? int64   as v)       -> tm.FromInt64   v
-        | (:? sbyte   as v)       -> tm.FromSByte   v
-        | (:? uint16  as v)       -> tm.FromUInt16  v
-        | (:? uint32  as v)       -> tm.FromUInt32  v
-        | (:? uint64  as v)       -> tm.FromUInt64  v
-        | (:? IFormattable as f)  -> tm.FromString  (f.ToString ("", defaultCulture))
-        | _                       -> tm.FromString  (o.ToString ())
-      match mv with
-      | Just v  -> v |> good
-      | Nothing -> result tm.Zero (AnyError.CanNotConvertTo (o, getType o, typeof<'T>)|> leaf c)
+    ttrans <| fun at c ->
+      match at.Value with
+      | Just v ->
+        let mv =
+          match v with
+          | null                    -> Nothing
+          | (:? string  as v)       -> tm.FromString  v
+          | (:? byte    as v)       -> tm.FromByte    v
+          | (:? char    as v)       -> tm.FromChar    v
+          | (:? decimal as v)       -> tm.FromDecimal v
+          | (:? float   as v)       -> tm.FromFloat   v
+          | (:? float32 as v)       -> tm.FromFloat32 v
+          | (:? int16   as v)       -> tm.FromInt16   v
+          | (:? int32   as v)       -> tm.FromInt32   v
+          | (:? int64   as v)       -> tm.FromInt64   v
+          | (:? sbyte   as v)       -> tm.FromSByte   v
+          | (:? uint16  as v)       -> tm.FromUInt16  v
+          | (:? uint32  as v)       -> tm.FromUInt32  v
+          | (:? uint64  as v)       -> tm.FromUInt64  v
+          | (:? IFormattable as f)  -> tm.FromString  (f.ToString ("", defaultCulture))
+          | _                       -> tm.FromString  (v.ToString ())
+        match mv with
+        | Just v  -> v |> good
+        | Nothing -> result tm.Zero (AnyError.CanNotConvertTo (v, at.Type, typeof<'T>)|> leaf c)
+      | Nothing -> result tm.Zero (AnyError.NoValue at.Type |> leaf c)
 
   let tasByte    = textract TypeMapper.tm_byte
   let tasChar    = textract TypeMapper.tm_char
@@ -716,55 +589,48 @@ module AnyTransform =
   let tasUInt64  = textract TypeMapper.tm_uint64
 
   let tasString : AnyTransform<string> =
-    ttrans <| fun o c r ->
-      match o with
-      | (:? string as v)        -> v                                |> good
-      | (:? IFormattable as f)  -> f.ToString ("", defaultCulture)  |> good
-      | _                       -> o |> string                      |> good
+    ttrans <| fun at c ->
+      match at.Value with
+      | Just v ->
+        match v with
+        | (:? string as v)        -> v                                |> good
+        | (:? IFormattable as f)  -> f.ToString ("", defaultCulture)  |> good
+        | _                       -> v |> string                      |> good
+      | Nothing -> result "" (AnyError.NoValue at.Type |> leaf c)
 
   // Queries
 
   let inline tindex idx v (t : AnyTransform<'T>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      match r.Indexer o with
-      | Just indexer  ->
-        let (AnyContext p)        = c
-        let (AnyIndexer indexer)  = indexer
-        match indexer idx with
-        | Just v      ->
-          let ic = (AnyContextElement.Index idx)::p |> AnyContext
-          invoke t v ic r
-        | Nothing     ->
-          result v (idx |> AnyError.IndexOutOfRange |> leaf c)
-      | Nothing       ->
-          result v (o |> getType |> AnyError.NotIndexable |> leaf c)
+    ttrans <| fun at c ->
+      match at.Index idx with
+      | Just v  ->
+        let (AnyContext p) = c
+        let ic = (AnyContextElement.Index idx)::p |> AnyContext
+        invoke t v ic
+      | Nothing     ->
+        result v (idx |> AnyError.IndexOutOfRange |> leaf c)
 
   let inline tindexz idx t = tindex idx (zero ()) t
 
   let inline tmany (t : AnyTransform<'T>) : AnyTransform<'T []> =
-    ttrans <| fun o c r ->
+    ttrans <| fun at c ->
       let ra = ResizeArray defaultSize
-      match r.Iterator o with
+      match at.Iterator () with
       | Just iterator ->
-        let et = Loops.tmany t c r ra iterator empty 0
+        let et = Loops.tmany t c ra iterator empty 0
         result (ra.ToArray ()) et
       | Nothing ->
-        result [||] (o |> getType |> AnyError.NotIterable |> leaf c)
+        result [||] (at.Type |> AnyError.NotIterable |> leaf c)
 
   let inline tmember name v (t : AnyTransform<'T>) : AnyTransform<'T> =
-    ttrans <| fun o c r ->
-      match r.Lookup o with
-      | Just lookup ->
-        let (AnyContext p)      = c
-        let (AnyLookup getter)  = lookup
-        match getter name with
-        | Just v    ->
-          let ic = (AnyContextElement.Member name)::p |> AnyContext
-          invoke t v ic r
-        | Nothing   ->
-          result v (name |> AnyError.MemberNotFound |> leaf c)
-      | Nothing     ->
-          result v (o |> getType |> AnyError.NotLookupable |> leaf c)
+    ttrans <| fun at c ->
+      match at.Lookup name with
+      | Just v    ->
+        let (AnyContext p) = c
+        let ic = (AnyContextElement.Member name)::p |> AnyContext
+        invoke t v ic
+      | Nothing   ->
+        result v (name |> AnyError.MemberNotFound |> leaf c)
 
   let inline tmemberz name t = tmember name (zero ()) t
 

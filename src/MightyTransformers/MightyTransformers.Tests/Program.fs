@@ -178,15 +178,7 @@ module AnyTransformerTest =
         |> twithContext (sprintf "%s %s" name surname)
     let tauthors    = tmany tauthor
 
-    let adapterRepo =
-      let adapterRepo = AnyAdapterRepository ()
-      adapterRepo.AddLookup   AnyAdapter.mapLookup<obj>
-      adapterRepo.AddIterator AnyAdapter.mapIterator<obj>
-      adapterRepo.AddIndexer  AnyAdapter.arrayIndexer<obj>
-      adapterRepo.AddIterator AnyAdapter.arrayIterator<obj>
-      adapterRepo
-
-    let a = trun tauthors authors adapterRepo
+    let a = trun tauthors (AnyTree.Adapter.adaptObj authors)
     let e =
       [|
         Author.New
