@@ -88,22 +88,30 @@ type MaybeKleisli<'T, 'U> with
 
 let maybe = Maybe.MaybeBuilder ()
 
-[<Struct>]
-type LazyList<'T> =
-  | LazyEmpty
-  | LazyCons of 'T*(unit -> LazyList<'T>)
+type [<Struct>] LazyList_<'T> =
+  | LazyEmpty_
+  | LazyCons_ of 'T*LazyList<'T>
+and  [<Struct>] LazyList<'T> = LazyList of (unit -> LazyList_<'T>)
 
 module LazyList =
-  let lempty = LazyEmpty
-  let inline lcons v ll = LazyCons (v, ll)
+  [<GeneralizableValue>]
+  let lempty<'T>        : LazyList<'T> = LazyList <| fun () -> LazyEmpty_
+  let inline lcons v ll : LazyList<'T> = LazyList <| fun () -> LazyCons_ (v, ll)
 
   let rec lfromArrayi i (s : 'T []) : LazyList<'T> =
     if s.Length > i && i >= 0 then
-      LazyCons (s.[i], fun () -> lfromArrayi (i + 1) s)
+      LazyList <| fun () -> LazyCons_ (s.[i], lfromArrayi (i + 1) s)
     else
-      LazyEmpty
+      lempty
 
-  let lfromArray s = lfromArrayi 0 s
+  let inline lfromArray s = lfromArrayi 0 s
+
+  let inline (|LazyEmpty|LazyCons|) (LazyList f) =
+    match f () with
+    | LazyEmpty_         -> LazyEmpty
+    | LazyCons_ (v, ll)  -> LazyCons (v, ll)
+
+open LazyList
 
 open System
 open System.Collections.Generic
@@ -122,8 +130,8 @@ type IAnyTree =
   end
 
 module AnyTree =
-  module Adapter =
-    let rec adaptObj (o : obj): IAnyTree =
+  module AdaptObj =
+    let rec internal adaptObj (o : obj): IAnyTree =
       match o with
       | null                      ->
         { new IAnyTree with
@@ -134,7 +142,7 @@ module AnyTree =
           member x.Type           = typeof<Void>
           member x.Index    idx   = Nothing
           member x.Lookup   name  = Nothing
-          member x.Iterator ()    = LazyList.lempty
+          member x.Iterator ()    = lempty
         }
       | :? Map<string, obj> as v  -> adaptMap v
       | :? (obj []) as v          -> adaptArray v
@@ -178,6 +186,7 @@ module AnyTree =
         member x.Lookup   name  = Nothing
         member x.Iterator ()    = a |> Array.map adaptObj |> LazyList.lfromArray
       }
+    let adapt o = adaptObj o
 
 [<RequireQualifiedAccess>]
 type AnyContextElement =
@@ -405,14 +414,13 @@ module AnyTransform =
       let rec tmany t c (ra : ResizeArray<_>) lazyList et i =
         let (AnyContext p)        = c
         match lazyList with
-        | LazyCons (v, ll) ->
+        | LazyCons (v, ll)->
           let ic = (AnyContextElement.Index i)::p |> AnyContext
           let tr = invoke t v ic
           if isGood tr.ErrorTree then
             ra.Add tr.Value
-          tmany t c ra (ll ()) (join et tr.ErrorTree) (i + 1)
-        | LazyEmpty ->
-          et
+          tmany t c ra ll (join et tr.ErrorTree) (i + 1)
+        | LazyEmpty       -> et
 
   open Details
 

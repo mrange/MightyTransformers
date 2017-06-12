@@ -178,7 +178,7 @@ module AnyTransformerTest =
         |> twithContext (sprintf "%s %s" name surname)
     let tauthors    = tmany tauthor
 
-    let a = trun tauthors (AnyTree.Adapter.adaptObj authors)
+    let a = trun tauthors (AnyTree.AdaptObj.adapt authors)
     let e =
       [|
         Author.New
